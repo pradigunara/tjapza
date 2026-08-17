@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Local binaries & runtime data
+bin/
+pb/pocketbase
+pb/pb_data/
+pb/test_pb_*
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# Build output
+web/dist/
+dist/
+
+# OS & IDE
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
