@@ -159,6 +159,8 @@ routerAdd("POST", "/api/tjapza/room/start", (c) => {
         return c.badRequestError("Game is not in waiting state");
     }
 
+    var seats = cards.getRecordJSON(game, "seats", []);
+
     // Determine current room host (lowest occupied human seat)
     var hostSeatIndex = -1;
     for (var k = 0; k < 4; k++) {
