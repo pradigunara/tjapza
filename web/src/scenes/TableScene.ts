@@ -451,15 +451,34 @@ export class TableScene {
         <div class="top-bar-right">
           ${
             this.game.status === 'playing'
-              ? `
-            <div class="turn-timer-hud" title="Turn Timer">
-              <span class="timer-icon">⏱️</span>
-              <span class="timer-text" id="turn-timer-text">120s</span>
-              <div class="timer-progress-track">
-                <div class="timer-progress-bar" id="turn-timer-bar"></div>
-              </div>
-            </div>
-          `
+              ? (() => {
+                  const counts = this.game.counts || [13, 13, 13, 13];
+                  let hasActiveHuman = false;
+                  for (let s = 0; s < 4; s++) {
+                    const st = seats[s];
+                    if (st && !st.is_bot && st.user_id && counts[s] > 0) {
+                      hasActiveHuman = true;
+                      break;
+                    }
+                  }
+                  if (!hasActiveHuman) {
+                    return `
+                      <div class="turn-timer-hud" style="background: rgba(234, 179, 8, 0.2); border-color: rgba(234, 179, 8, 0.5);" title="Fast Forwarding Bot Turns">
+                        <span class="timer-icon">⏩</span>
+                        <span class="timer-text" style="color: #fde047;">Fast Forward</span>
+                      </div>
+                    `;
+                  }
+                  return `
+                    <div class="turn-timer-hud" title="Turn Timer">
+                      <span class="timer-icon">⏱️</span>
+                      <span class="timer-text" id="turn-timer-text">120s</span>
+                      <div class="timer-progress-track">
+                        <div class="timer-progress-bar" id="turn-timer-bar"></div>
+                      </div>
+                    </div>
+                  `;
+                })()
               : ''
           }
 

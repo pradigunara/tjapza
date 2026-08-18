@@ -462,6 +462,18 @@ export class GameHeartbeat {
     // Check if current seat is a bot
     const isBotTurn = currentSeatInfo ? currentSeatInfo.is_bot : false;
 
+    // Check if all remaining active players (with cards > 0) are bots -> Fast Forward mode!
+    const counts = game.counts || [13, 13, 13, 13];
+    let hasActiveHuman = false;
+    for (let s = 0; s < 4; s++) {
+      const st = seats[s];
+      if (st && !st.is_bot && st.user_id && counts[s] > 0) {
+        hasActiveHuman = true;
+        break;
+      }
+    }
+    const isBotOnlyRemaining = !hasActiveHuman;
+
     // Check if human turn has timed out (120s timer)
     let isTimeout = false;
     if (!isBotTurn && game.turn_started_at) {
@@ -472,13 +484,15 @@ export class GameHeartbeat {
     }
 
     if (isBotTurn || isTimeout) {
-      // Primary ticker is the lowest active human; secondary humans act as fallback after 1.8s
+      // Primary ticker is the lowest active human; secondary humans act as fallback
+      // Fast forward when bot-only remaining: fallback delay is 300ms instead of 1.8s
       const isPrimary = (lowestHumanSeat === localSeat || lowestHumanSeat === -1);
       const turnElapsed = game.turn_started_at
         ? (Date.now() - new Date(game.turn_started_at).getTime())
         : 0;
 
-      if (!isPrimary && turnElapsed < 1800) {
+      const fallbackThreshold = isBotOnlyRemaining ? 300 : 1800;
+      if (!isPrimary && turnElapsed < fallbackThreshold) {
         return;
       }
 
@@ -492,6 +506,10 @@ export class GameHeartbeat {
         }
       } finally {
         this.isTicking = false;
+        // If bot-only remaining, trigger next tick immediately with 200ms delay
+        if (isBotOnlyRemaining && isPrimary) {
+          window.setTimeout(() => this.tick(), 200);
+        }
       }
     }
   }
