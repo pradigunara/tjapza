@@ -1,8 +1,8 @@
 # --- Stage 1: Build Frontend ---
 FROM oven/bun:1-alpine AS frontend-builder
 WORKDIR /app/web
-COPY web/package.json ./
-RUN bun install
+COPY web/package.json web/bun.lock* ./
+RUN bun install --frozen-lockfile
 COPY web/ ./
 RUN bun run build
 
