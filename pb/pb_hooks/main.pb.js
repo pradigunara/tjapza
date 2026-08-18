@@ -676,6 +676,14 @@ onRecordCreateRequest((e) => {
                         is_bot: !!(lastSeatInfo && lastSeatInfo.is_bot)
                     });
                     $app.save(lastResult);
+
+                    // Ephemeral cleanup: Purge temporary hands for this finished game
+                    try {
+                        var finishedHands = $app.findRecordsByFilter("hands", "game_id = {:gid}", "-created", 10, 0, { gid: game.id });
+                        for (var fh = 0; fh < finishedHands.length; fh++) {
+                            $app.delete(finishedHands[fh]);
+                        }
+                    } catch (eHands) {}
                 }
             }
 
@@ -745,3 +753,43 @@ onRecordCreateRequest((e) => {
         throw err;
     }
 }, "moves");
+
+// ----------------------------------------------------
+// CRON: EPHEMERAL DATA CLEANUP
+// ----------------------------------------------------
+// Runs every 10 minutes to purge temporary moves, hands, and abandoned games,
+// while permanently preserving user profiles and lifetime results/stats.
+cronAdd("tjapzaEphemeralCleanup", "*/10 * * * *", () => {
+    try {
+        // 1. Purge ephemeral moves older than 15 minutes
+        var movesCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        var oldMoves = $app.findRecordsByFilter("moves", "created < {:cutoff}", "-created", 300, 0, { cutoff: movesCutoff });
+        for (var m = 0; m < oldMoves.length; m++) {
+            try { $app.delete(oldMoves[m]); } catch (_) {}
+        }
+
+        // 2. Purge ephemeral hands older than 30 minutes
+        var handsCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        var oldHands = $app.findRecordsByFilter("hands", "created < {:cutoff}", "-created", 100, 0, { cutoff: handsCutoff });
+        for (var h = 0; h < oldHands.length; h++) {
+            try { $app.delete(oldHands[h]); } catch (_) {}
+        }
+
+        // 3. Purge abandoned waiting games older than 30 minutes
+        var waitingCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        var abandonedGames = $app.findRecordsByFilter("games", "status = 'waiting' && created < {:cutoff}", "-created", 50, 0, { cutoff: waitingCutoff });
+        for (var ag = 0; ag < abandonedGames.length; ag++) {
+            try { $app.delete(abandonedGames[ag]); } catch (_) {}
+        }
+
+        // 4. Purge finished games older than 2 hours (results records are preserved for lifetime player statistics)
+        var finishedCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+        var oldFinishedGames = $app.findRecordsByFilter("games", "status = 'finished' && updated < {:cutoff}", "-created", 50, 0, { cutoff: finishedCutoff });
+        for (var fg = 0; fg < oldFinishedGames.length; fg++) {
+            try { $app.delete(oldFinishedGames[fg]); } catch (_) {}
+        }
+    } catch (cronErr) {
+        console.error("CRON_CLEANUP_ERROR:", cronErr);
+    }
+});
+
