@@ -13,6 +13,7 @@ export class PileView extends Container {
 
   private currentCombo: LastCombo | null = null;
   private cardSprites: CardSprite[] = [];
+  private retiringSprites: CardSprite[] = [];
   private clearTimer: number | null = null;
 
   constructor() {
@@ -50,6 +51,20 @@ export class PileView extends Container {
     this.addChild(this.bannerContainer);
   }
 
+  private purgeAllCardSprites(): void {
+    if (this.clearTimer !== null) {
+      clearTimeout(this.clearTimer);
+      this.clearTimer = null;
+    }
+    while (this.cardContainer.children.length > 0) {
+      const child = this.cardContainer.children[0];
+      this.cardContainer.removeChild(child);
+      child.destroy();
+    }
+    this.cardSprites = [];
+    this.retiringSprites = [];
+  }
+
   public setCombo(
     combo: LastCombo | null,
     playerName?: string,
@@ -58,11 +73,6 @@ export class PileView extends Container {
     if (!combo || !combo.cards || combo.cards.length === 0) {
       this.clearPile();
       return;
-    }
-
-    if (this.clearTimer !== null) {
-      clearTimeout(this.clearTimer);
-      this.clearTimer = null;
     }
 
     // Check if same combo
@@ -74,13 +84,7 @@ export class PileView extends Container {
     if (sameCards) return;
 
     this.currentCombo = combo;
-
-    // Clear previous card sprites
-    for (const s of this.cardSprites) {
-      this.cardContainer.removeChild(s);
-      s.destroy();
-    }
-    this.cardSprites = [];
+    this.purgeAllCardSprites();
 
     const cards = combo.cards;
     const count = cards.length;
@@ -139,7 +143,7 @@ export class PileView extends Container {
   }
 
   public clearPile(): void {
-    if (this.currentCombo === null && this.cardSprites.length === 0) return;
+    if (this.currentCombo === null && this.cardSprites.length === 0 && this.retiringSprites.length === 0) return;
 
     if (this.clearTimer !== null) {
       clearTimeout(this.clearTimer);
@@ -149,26 +153,35 @@ export class PileView extends Container {
     this.currentCombo = null;
     this.bannerContainer.visible = false;
 
-    // Isolate retiring sprites so subsequent setCombo calls are never destroyed
-    const retiringSprites = [...this.cardSprites];
+    // Clean up any previously retiring sprites
+    for (const old of this.retiringSprites) {
+      this.cardContainer.removeChild(old);
+      old.destroy();
+    }
+
+    this.retiringSprites = [...this.cardSprites];
     this.cardSprites = [];
 
-    for (const sprite of retiringSprites) {
+    for (const sprite of this.retiringSprites) {
       sprite.targetAlpha = 0;
       sprite.targetY = sprite.y - 40;
     }
 
     this.clearTimer = window.setTimeout(() => {
       this.clearTimer = null;
-      for (const sprite of retiringSprites) {
+      for (const sprite of this.retiringSprites) {
         this.cardContainer.removeChild(sprite);
         sprite.destroy();
       }
+      this.retiringSprites = [];
     }, 280);
   }
 
   public update(delta: number): void {
     for (const sprite of this.cardSprites) {
+      sprite.update(delta);
+    }
+    for (const sprite of this.retiringSprites) {
       sprite.update(delta);
     }
   }
