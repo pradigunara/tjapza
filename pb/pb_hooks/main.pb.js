@@ -467,7 +467,7 @@ onRecordCreateRequest((e) => {
         // Check if opening move of the game
         var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
 
-        // 1. Handle TICK Action (Bot move or 120s timer timeout auto-play)
+        // 1. Handle TICK Action (Bot move or turn timer timeout auto-play)
         if (action === "tick") {
             var isBotTurn = currentSeat && currentSeat.is_bot === true;
             var isTimeout = false;
@@ -475,7 +475,8 @@ onRecordCreateRequest((e) => {
             if (!isBotTurn && turnStartedAt) {
                 var nowTime = Date.now();
                 var startTime = new Date(turnStartedAt).getTime();
-                if (nowTime - startTime >= 120000) { // 120s turn timer expired
+                var timeoutLimit = cards.TURN_TIMEOUT_MS || 60000;
+                if (nowTime - startTime >= timeoutLimit) { // turn timer expired
                     isTimeout = true;
                 }
             }

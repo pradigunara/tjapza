@@ -8,6 +8,12 @@ var SUIT_CLUB = 1;    // ♣
 var SUIT_HEART = 2;   // ♥
 var SUIT_SPADE = 3;   // ♠
 
+// Game Timing Constants
+var TURN_TIMEOUT_SECS = 60; // 60s human turn timer
+var TURN_TIMEOUT_MS = TURN_TIMEOUT_SECS * 1000; // 60,000 ms
+var PUBLIC_LOBBY_AUTOSTART_SECS = 30; // 30s public lobby auto-fill countdown
+var PUBLIC_LOBBY_AUTOSTART_MS = PUBLIC_LOBBY_AUTOSTART_SECS * 1000; // 30,000 ms
+
 // Rank 0 = 3, 1 = 4, ..., 8 = J, 9 = Q, 10 = K, 11 = A, 12 = 2
 var RANK_NAMES = ["3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2"];
 var SUIT_SYMBOLS = ["♦", "♣", "♥", "♠"];
@@ -681,6 +687,10 @@ if (typeof module !== "undefined" && module.exports) {
         generateRoomCode: generateRoomCode,
         findNextActiveSeat: findNextActiveSeat,
         findNextTrickSeat: findNextTrickSeat,
-        dealAndStartGame: dealAndStartGame
+        dealAndStartGame: dealAndStartGame,
+        TURN_TIMEOUT_SECS: TURN_TIMEOUT_SECS,
+        TURN_TIMEOUT_MS: TURN_TIMEOUT_MS,
+        PUBLIC_LOBBY_AUTOSTART_SECS: PUBLIC_LOBBY_AUTOSTART_SECS,
+        PUBLIC_LOBBY_AUTOSTART_MS: PUBLIC_LOBBY_AUTOSTART_MS
     };
 }

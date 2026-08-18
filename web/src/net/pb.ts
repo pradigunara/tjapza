@@ -1,4 +1,5 @@
 import PocketBase, { LocalAuthStore, type RecordModel } from 'pocketbase';
+import { TURN_TIMEOUT_MS } from '../rules/cards';
 
 // Base URL detection: use environment variable or relative in production, fallback to 8090 in dev
 const PB_URL =
@@ -438,6 +439,10 @@ export class GameHeartbeat {
     }
   }
 
+  public triggerImmediate(delayMs = 250): void {
+    window.setTimeout(() => this.tick(), delayMs);
+  }
+
   private async tick(): Promise<void> {
     if (this.isTicking) return;
     const game = this.getGameState();
@@ -475,24 +480,23 @@ export class GameHeartbeat {
     }
     const isBotOnlyRemaining = !hasActiveHuman;
 
-    // Check if human turn has timed out (120s timer)
+    // Check if human turn has timed out
     let isTimeout = false;
     if (!isBotTurn && game.turn_started_at) {
       const startTime = new Date(game.turn_started_at).getTime();
-      if (Date.now() - startTime >= 120000) {
+      if (Date.now() - startTime >= TURN_TIMEOUT_MS) {
         isTimeout = true;
       }
     }
 
     if (isBotTurn || isTimeout) {
       // Primary ticker is the lowest active human; secondary humans act as fallback
-      // Fast forward when bot-only remaining: fallback delay is 300ms instead of 1.8s
       const isPrimary = (lowestHumanSeat === localSeat || lowestHumanSeat === -1);
       const turnElapsed = game.turn_started_at
         ? (Date.now() - new Date(game.turn_started_at).getTime())
         : 0;
 
-      const fallbackThreshold = isBotOnlyRemaining ? 300 : 1800;
+      const fallbackThreshold = isBotOnlyRemaining ? 250 : 1200;
       if (!isPrimary && turnElapsed < fallbackThreshold) {
         return;
       }
@@ -507,9 +511,14 @@ export class GameHeartbeat {
         }
       } finally {
         this.isTicking = false;
-        // If bot-only remaining, trigger next tick immediately with 200ms delay
-        if (isBotOnlyRemaining && isPrimary) {
-          window.setTimeout(() => this.tick(), 200);
+        // If next turn is also a bot (or fast forward mode), trigger next tick automatically
+        if (isPrimary) {
+          const nextGame = this.getGameState();
+          const nextTurnSeat = nextGame?.seats?.[nextGame?.turn_index];
+          if (nextGame?.status === 'playing' && (isBotOnlyRemaining || nextTurnSeat?.is_bot)) {
+            const delay = isBotOnlyRemaining ? 200 : 350;
+            window.setTimeout(() => this.tick(), delay);
+          }
         }
       }
     }

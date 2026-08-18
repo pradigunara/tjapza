@@ -31,6 +31,12 @@ export const RANK_2: Rank = 12;
 
 export const CARD_3D = 0; // 3♦ (Rank 0, Suit 0)
 
+// Game Timing Constants
+export const TURN_TIMEOUT_SECS = 60; // 60s human turn timer
+export const TURN_TIMEOUT_MS = TURN_TIMEOUT_SECS * 1000; // 60,000 ms
+export const PUBLIC_LOBBY_AUTOSTART_SECS = 30; // 30s public lobby auto-fill countdown
+export const PUBLIC_LOBBY_AUTOSTART_MS = PUBLIC_LOBBY_AUTOSTART_SECS * 1000; // 30,000 ms
+
 export const SUIT_SYMBOLS = ['♦', '♣', '♥', '♠'] as const;
 export const SUIT_NAMES = ['D', 'C', 'H', 'S'] as const;
 export const RANK_NAMES = ['3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '2'] as const;

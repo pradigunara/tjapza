@@ -16,7 +16,7 @@ import { PileView } from '../render/PileView';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 import { escapeHtml } from '../ui/escape';
-import { isValidPlay, sortCards, classifyCombo, getBotMove } from '../rules/cards';
+import { isValidPlay, sortCards, classifyCombo, getBotMove, TURN_TIMEOUT_MS, PUBLIC_LOBBY_AUTOSTART_MS } from '../rules/cards';
 
 export interface TableSceneCallbacks {
   onGameFinished: (game: GameRecord, localSeatIndex: number) => void;
@@ -335,6 +335,13 @@ export class TableScene {
       this.handFan.setCards(this.handCards);
       this.renderHud();
       sound.playDeal();
+    }
+
+    if (game.status === 'playing') {
+      const currentTurnSeat = game.seats?.[game.turn_index];
+      if (currentTurnSeat?.is_bot) {
+        this.heartbeat?.triggerImmediate(350);
+      }
     }
 
     if (game.status === 'finished') {
@@ -755,7 +762,7 @@ export class TableScene {
     if (this.game.status === 'waiting' && this.game.is_public && this.game.created) {
       const createdTime = new Date(this.game.created).getTime();
       const elapsed = Math.max(0, Date.now() - createdTime);
-      const remainingMs = Math.max(0, 30000 - elapsed);
+      const remainingMs = Math.max(0, PUBLIC_LOBBY_AUTOSTART_MS - elapsed);
       const secondsLeft = Math.ceil(remainingMs / 1000);
 
       const qpSec = this.hudContainer.querySelector('#quickplay-timer-sec');
@@ -776,7 +783,7 @@ export class TableScene {
 
     const startTime = new Date(this.game.turn_started_at).getTime();
     const elapsed = Math.max(0, Date.now() - startTime);
-    const totalDuration = 120000; // 120s
+    const totalDuration = TURN_TIMEOUT_MS;
     const remainingMs = Math.max(0, totalDuration - elapsed);
     const secondsLeft = Math.ceil(remainingMs / 1000);
     const pct = Math.min(100, Math.max(0, (remainingMs / totalDuration) * 100));
@@ -789,9 +796,9 @@ export class TableScene {
     }
     if (barEl) {
       barEl.style.width = `${pct}%`;
-      if (secondsLeft <= 15) {
+      if (secondsLeft <= 10) {
         barEl.style.backgroundColor = '#ef4444'; // Red
-      } else if (secondsLeft <= 45) {
+      } else if (secondsLeft <= 25) {
         barEl.style.backgroundColor = '#f59e0b'; // Amber
       } else {
         barEl.style.backgroundColor = '#22c55e'; // Green
@@ -850,6 +857,7 @@ export class TableScene {
     } finally {
       this.isProcessingMove = false;
       this.updateHudActionState();
+      this.heartbeat?.triggerImmediate(250);
     }
   }
 
@@ -885,6 +893,7 @@ export class TableScene {
     } finally {
       this.isProcessingMove = false;
       this.updateHudActionState();
+      this.heartbeat?.triggerImmediate(250);
     }
   }
 
