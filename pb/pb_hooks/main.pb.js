@@ -159,8 +159,6 @@ routerAdd("POST", "/api/tjapza/room/start", (c) => {
         return c.badRequestError("Game is not in waiting state");
     }
 
-    var seats = cards.getRecordJSON(game, "seats", []);
-
     // Determine current room host (lowest occupied human seat)
     var hostSeatIndex = -1;
     for (var k = 0; k < 4; k++) {
@@ -170,8 +168,22 @@ routerAdd("POST", "/api/tjapza/room/start", (c) => {
         }
     }
 
-    if (hostSeatIndex === -1 || seats[hostSeatIndex].user_id !== auth.id) {
-        return c.forbiddenError("Only the room host can start the game");
+    var isPublic = game.getBool("is_public");
+    var createdTime = new Date(game.getString("created")).getTime();
+    var isPublicTimedOut = isPublic && (Date.now() - createdTime >= 30000);
+
+    // Host can always start; In public rooms, any seated player can start after 30s countdown
+    var isCallerHost = (hostSeatIndex !== -1 && seats[hostSeatIndex].user_id === auth.id);
+    var isCallerSeated = false;
+    for (var s = 0; s < 4; s++) {
+        if (seats[s] && seats[s].user_id === auth.id) {
+            isCallerSeated = true;
+            break;
+        }
+    }
+
+    if (!isCallerHost && !(isPublicTimedOut && isCallerSeated)) {
+        return c.forbiddenError("Only the room host can start the game (or auto-start after 30s in public matches)");
     }
 
     // Fill empty seats with bots

@@ -522,7 +522,19 @@ export class TableScene {
               ${
                 isHost
                   ? `<button id="btn-start-game" class="btn-primary btn-gold btn-lg">Start Game (Fill Bots)</button>`
-                  : `<div class="waiting-host-notice">⏳ Waiting for host (<strong>${escapeHtml(hostName)}</strong>) to start…</div>`
+                  : this.game.is_public
+                    ? `
+                      <div class="waiting-host-notice">
+                        <span>⏳ Waiting for players or host to start…</span>
+                        <div id="quickplay-countdown-wrap" style="margin-top: 6px; font-size: 13px; color: #facc15;">
+                          Auto-start in <strong id="quickplay-timer-sec">30s</strong>
+                        </div>
+                        <button id="btn-force-start-game" class="btn-primary btn-gold btn-sm" style="display: none; margin-top: 8px;">
+                          ⚡ Start with Bots Now
+                        </button>
+                      </div>
+                    `
+                    : `<div class="waiting-host-notice">⏳ Waiting for host (<strong>${escapeHtml(hostName)}</strong>) to start…</div>`
               }
             </div>
           </div>
@@ -605,9 +617,8 @@ export class TableScene {
       toast.success('Room link copied to clipboard!');
     });
 
-    // Waiting: Start Game
-    const btnStart = this.hudContainer.querySelector('#btn-start-game');
-    btnStart?.addEventListener('click', async () => {
+    // Waiting: Start Game (Host or Force-Start after 30s)
+    const handleStartGame = async () => {
       sound.playClick();
       try {
         toast.info('Starting game with bots…');
@@ -620,7 +631,13 @@ export class TableScene {
       } catch (err: any) {
         toast.error(err?.message || 'Failed to start game');
       }
-    });
+    };
+
+    const btnStart = this.hudContainer.querySelector('#btn-start-game');
+    btnStart?.addEventListener('click', handleStartGame);
+
+    const btnForceStart = this.hudContainer.querySelector('#btn-force-start-game');
+    btnForceStart?.addEventListener('click', handleStartGame);
 
     // In-game actions
     const btnPlay = this.hudContainer.querySelector('#btn-action-play');
@@ -716,6 +733,27 @@ export class TableScene {
   }
 
   private updateTimerUI(): void {
+    // 1. Lobby Waiting Countdown for Public Quickplay
+    if (this.game.status === 'waiting' && this.game.is_public && this.game.created) {
+      const createdTime = new Date(this.game.created).getTime();
+      const elapsed = Math.max(0, Date.now() - createdTime);
+      const remainingMs = Math.max(0, 30000 - elapsed);
+      const secondsLeft = Math.ceil(remainingMs / 1000);
+
+      const qpSec = this.hudContainer.querySelector('#quickplay-timer-sec');
+      const qpWrap = this.hudContainer.querySelector('#quickplay-countdown-wrap') as HTMLElement;
+      const btnForce = this.hudContainer.querySelector('#btn-force-start-game') as HTMLElement;
+
+      if (qpSec) {
+        qpSec.textContent = `${secondsLeft}s`;
+      }
+      if (secondsLeft === 0) {
+        if (qpWrap) qpWrap.style.display = 'none';
+        if (btnForce) btnForce.style.display = 'inline-block';
+      }
+      return;
+    }
+
     if (this.game.status !== 'playing' || !this.game.turn_started_at) return;
 
     const startTime = new Date(this.game.turn_started_at).getTime();
