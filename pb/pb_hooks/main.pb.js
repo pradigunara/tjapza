@@ -338,6 +338,17 @@ routerAdd("POST", "/api/tjapza/rematch", (c) => {
         return c.forbiddenError("You were not a participant in this game");
     }
 
+    // If a rematch game was already created for this old game, return it
+    var existingRematchId = oldGame.getString("rematch_game_id");
+    if (existingRematchId) {
+        try {
+            var existingGame = $app.findRecordById("games", existingRematchId);
+            return c.json(200, {
+                game: existingGame
+            });
+        } catch (e) {}
+    }
+
     // Preserve players and create a fresh game record
     var newSeats = [];
     for (var j = 0; j < 4; j++) {
@@ -379,6 +390,12 @@ routerAdd("POST", "/api/tjapza/rematch", (c) => {
     if (totalSeated === 4) {
         cards.dealAndStartGame(newGame);
     }
+
+    // Link rematch_game_id to oldGame and save so all SSE listeners navigate together
+    try {
+        oldGame.set("rematch_game_id", newGame.id);
+        $app.save(oldGame);
+    } catch (saveErr) {}
 
     return c.json(200, {
         game: newGame

@@ -55,6 +55,7 @@ export interface GameRecord extends RecordModel {
   counts: number[];
   turn_started_at: string;
   winner_ranks: number[];
+  rematch_game_id?: string;
   created: string;
   updated: string;
 }
@@ -453,9 +454,6 @@ export class GameHeartbeat {
       }
     }
 
-    // Only the lowest active human acts as the room ticker
-    if (lowestHumanSeat !== localSeat) return;
-
     const currentTurn = game.turn_index;
     const currentSeatInfo = seats[currentTurn];
 
@@ -472,6 +470,16 @@ export class GameHeartbeat {
     }
 
     if (isBotTurn || isTimeout) {
+      // Primary ticker is the lowest active human; secondary humans act as fallback after 1.8s
+      const isPrimary = (lowestHumanSeat === localSeat || lowestHumanSeat === -1);
+      const turnElapsed = game.turn_started_at
+        ? (Date.now() - new Date(game.turn_started_at).getTime())
+        : 0;
+
+      if (!isPrimary && turnElapsed < 1800) {
+        return;
+      }
+
       this.isTicking = true;
       try {
         await sendTick(this.gameId, currentTurn);

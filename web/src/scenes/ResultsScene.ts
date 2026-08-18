@@ -1,5 +1,5 @@
 import type { GameRecord, ResultRecord } from '../net/pb';
-import { rematch, fetchResults } from '../net/pb';
+import { rematch, fetchResults, joinRoom, pb } from '../net/pb';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 
@@ -18,6 +18,8 @@ export class ResultsScene {
   private countdownTimer: number | null = null;
   private secondsLeft = 30;
   private isRematching = false;
+  private hasNavigatedToRematch = false;
+  private unsubscribeGame?: () => void;
 
   constructor(
     game: GameRecord,
@@ -51,9 +53,34 @@ export class ResultsScene {
 
     this.render();
     this.startCountdown();
+
+    // Subscribe to game updates to catch rematch_game_id when any room player starts rematch
+    try {
+      this.unsubscribeGame = await pb.collection('games').subscribe(this.game.id, async (e) => {
+        if (e.action === 'update' && e.record) {
+          const rematchId = (e.record as any).rematch_game_id;
+          if (rematchId && !this.hasNavigatedToRematch) {
+            this.hasNavigatedToRematch = true;
+            toast.info('Rematch started! Entering table…');
+            try {
+              const res = await joinRoom(rematchId);
+              this.callbacks.onRematchStarted(res.game, this.localSeatIndex);
+            } catch (err: any) {
+              console.error('Failed to auto-join rematch:', err);
+            }
+          }
+        }
+      });
+    } catch (subErr) {
+      console.debug('Rematch SSE subscription notice:', subErr);
+    }
   }
 
   public unmount(): void {
+    if (this.unsubscribeGame) {
+      this.unsubscribeGame();
+      this.unsubscribeGame = undefined;
+    }
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
       this.countdownTimer = null;
