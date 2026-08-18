@@ -513,14 +513,18 @@ onRecordCreateRequest((e) => {
             // Fetch hand of current turn player
             var currentHandRecord = null;
             try {
-                var botHands = $app.findRecordsByFilter("hands", "game_id = {:gameId}", "", 10, 0, { gameId: gameId });
-                for (var hb = 0; hb < botHands.length; hb++) {
-                    if (botHands[hb].getInt("seat_index") === currentTurn) {
-                        currentHandRecord = botHands[hb];
-                        break;
+                currentHandRecord = $app.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && seat_index = " + currentTurn);
+            } catch (_) {
+                try {
+                    var botHands = $app.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 10, 0);
+                    for (var hb = 0; hb < botHands.length; hb++) {
+                        if (botHands[hb].getInt("seat_index") === currentTurn) {
+                            currentHandRecord = botHands[hb];
+                            break;
+                        }
                     }
-                }
-            } catch (hErr) {}
+                } catch (_) {}
+            }
 
             if (!currentHandRecord) {
                 // If hand is missing, check if player or game has finished
@@ -597,14 +601,26 @@ onRecordCreateRequest((e) => {
 
             // Fetch player hand
             try {
-                var humanHands = $app.findRecordsByFilter("hands", "game_id = {:gameId}", "", 10, 0, { gameId: gameId });
-                for (var hh = 0; hh < humanHands.length; hh++) {
-                    if (humanHands[hh].getInt("seat_index") === seatIndex) {
-                        playerHandRecord = humanHands[hh];
-                        break;
+                playerHandRecord = $app.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && seat_index = " + seatIndex);
+            } catch (_) {
+                try {
+                    if (e.auth) {
+                        playerHandRecord = $app.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && user_id = '" + e.auth.id + "'");
                     }
-                }
-            } catch (hErr2) {}
+                } catch (_) {}
+            }
+
+            if (!playerHandRecord) {
+                try {
+                    var humanHands = $app.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 10, 0);
+                    for (var hh = 0; hh < humanHands.length; hh++) {
+                        if (humanHands[hh].getInt("seat_index") === seatIndex || (e.auth && humanHands[hh].getString("user_id") === e.auth.id)) {
+                            playerHandRecord = humanHands[hh];
+                            break;
+                        }
+                    }
+                } catch (_) {}
+            }
 
             if (!playerHandRecord) {
                 throw new BadRequestError("Hand record not found");
