@@ -415,6 +415,9 @@ export class GameHeartbeat {
   private getGameState: () => GameRecord | null;
   private getLocalSeat: () => number;
 
+  private pendingTickTimer: number | null = null;
+  private hasPendingNextTick = false;
+
   constructor(
     gameId: string,
     getGameState: () => GameRecord | null,
@@ -427,9 +430,9 @@ export class GameHeartbeat {
 
   public start(): void {
     if (this.timer) return;
-    this.timer = window.setInterval(() => this.tick(), 1200);
-    // Initial immediate tick check
-    this.tick();
+    // Continuous background safety poll every 600ms
+    this.timer = window.setInterval(() => this.tick(), 600);
+    this.triggerImmediate(100);
   }
 
   public stop(): void {
@@ -437,14 +440,31 @@ export class GameHeartbeat {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this.pendingTickTimer) {
+      clearTimeout(this.pendingTickTimer);
+      this.pendingTickTimer = null;
+    }
   }
 
-  public triggerImmediate(delayMs = 250): void {
-    window.setTimeout(() => this.tick(), delayMs);
+  public triggerImmediate(delayMs = 200): void {
+    if (this.isTicking) {
+      this.hasPendingNextTick = true;
+      return;
+    }
+    if (this.pendingTickTimer) {
+      clearTimeout(this.pendingTickTimer);
+    }
+    this.pendingTickTimer = window.setTimeout(() => {
+      this.pendingTickTimer = null;
+      this.tick();
+    }, delayMs);
   }
 
   private async tick(): Promise<void> {
-    if (this.isTicking) return;
+    if (this.isTicking) {
+      this.hasPendingNextTick = true;
+      return;
+    }
     const game = this.getGameState();
     if (!game || game.status !== 'playing') return;
 
@@ -496,29 +516,29 @@ export class GameHeartbeat {
         ? (Date.now() - new Date(game.turn_started_at).getTime())
         : 0;
 
-      const fallbackThreshold = isBotOnlyRemaining ? 250 : 1200;
+      const fallbackThreshold = isBotOnlyRemaining ? 200 : 900;
       if (!isPrimary && turnElapsed < fallbackThreshold) {
         return;
       }
 
       this.isTicking = true;
+      this.hasPendingNextTick = false;
+
       try {
         await sendTick(this.gameId, currentTurn);
       } catch (err: any) {
-        // Silently ignore expected concurrent tick errors or log debug
         if (err?.status !== 400) {
           console.debug('Heartbeat tick notice:', err?.message || err);
         }
       } finally {
         this.isTicking = false;
-        // If next turn is also a bot (or fast forward mode), trigger next tick automatically
+        // Schedule next tick if queued or if next turn is a bot
         if (isPrimary) {
-          const nextGame = this.getGameState();
-          const nextTurnSeat = nextGame?.seats?.[nextGame?.turn_index];
-          if (nextGame?.status === 'playing' && (isBotOnlyRemaining || nextTurnSeat?.is_bot)) {
-            const delay = isBotOnlyRemaining ? 200 : 350;
-            window.setTimeout(() => this.tick(), delay);
-          }
+          const delay = isBotOnlyRemaining ? 200 : 350;
+          this.triggerImmediate(delay);
+        } else if (this.hasPendingNextTick) {
+          this.hasPendingNextTick = false;
+          this.triggerImmediate(300);
         }
       }
     }

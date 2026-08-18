@@ -435,10 +435,6 @@ onRecordCreateRequest((e) => {
             throw new BadRequestError("Invalid action type: " + action);
         }
 
-        if (typeof seatIndex !== "number" || seatIndex < 0 || seatIndex > 3) {
-            throw new BadRequestError("Invalid seat_index: " + seatIndex);
-        }
-
         var game = null;
         try {
             game = $app.findRecordById("games", gameId);
@@ -451,6 +447,16 @@ onRecordCreateRequest((e) => {
         }
 
         var currentTurn = game.getInt("turn_index");
+
+        // If action is tick, automatically sync seatIndex with the authoritative server turn
+        if (action === "tick") {
+            seatIndex = currentTurn;
+            moveRecord.set("seat_index", currentTurn);
+        }
+
+        if (typeof seatIndex !== "number" || seatIndex < 0 || seatIndex > 3) {
+            throw new BadRequestError("Invalid seat_index: " + seatIndex);
+        }
         var leaderIndex = game.getInt("leader_index");
         var passCount = game.getInt("pass_count");
         var passedSeats = cards.getRecordJSON(game, "passed_seats", []);
