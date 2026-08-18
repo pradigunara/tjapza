@@ -334,6 +334,76 @@ function findAllCombos(handCards) {
 }
 
 /**
+ * Decomposes a hand into a partition of non-overlapping combinations that minimizes
+ * the total number of moves (turns) required to empty the hand.
+ */
+function decomposeHand(handCards) {
+    if (!handCards || !handCards.length) return [];
+    var sorted = sortCards(handCards);
+    var bestPartition = [];
+    var minTurns = 999;
+
+    function search(remaining, current) {
+        if (remaining.length === 0) {
+            if (current.length < minTurns) {
+                minTurns = current.length;
+                bestPartition = current.slice();
+            }
+            return;
+        }
+
+        if (current.length + 1 >= minTurns && minTurns !== 999) {
+            return;
+        }
+
+        var allCombos = findAllCombos(remaining);
+
+        // 1. Try 5-card combos
+        var fiveList = [].concat(allCombos.straights, allCombos.flushes, allCombos.fullHouses, allCombos.quads, allCombos.straightFlushes);
+        for (var f = 0; f < fiveList.length; f++) {
+            var combo = fiveList[f];
+            var nextRem = [];
+            for (var r = 0; r < remaining.length; r++) {
+                if (combo.cards.indexOf(remaining[r]) === -1) {
+                    nextRem.push(remaining[r]);
+                }
+            }
+            search(nextRem, current.concat([combo]));
+        }
+
+        // 2. Try Pairs
+        for (var p = 0; p < allCombos.pairs.length; p++) {
+            var pair = allCombos.pairs[p];
+            var nextRemP = [];
+            for (var r2 = 0; r2 < remaining.length; r2++) {
+                if (pair.cards.indexOf(remaining[r2]) === -1) {
+                    nextRemP.push(remaining[r2]);
+                }
+            }
+            search(nextRemP, current.concat([pair]));
+        }
+
+        // 3. Base fallback: All remaining as singles
+        var fullPartition = current.concat(allCombos.singles);
+        if (fullPartition.length < minTurns) {
+            minTurns = fullPartition.length;
+            bestPartition = fullPartition.slice();
+        }
+    }
+
+    search(sorted, []);
+
+    bestPartition.sort(function(a, b) {
+        if (a.cards.length !== b.cards.length) {
+            return b.cards.length - a.cards.length;
+        }
+        return a.power - b.power;
+    });
+
+    return bestPartition;
+}
+
+/**
  * Determines the bot's move given its hand and current game state.
  * Returns { action: 'play', cards: [...] } or { action: 'pass', cards: [] }.
  */
@@ -346,6 +416,7 @@ function getBotMove(handCards, lastCombo, isFirstMove, counts) {
         lastCombo = null;
     }
 
+    var partition = decomposeHand(handCards);
     var all = findAllCombos(handCards);
 
     // If first move of game: MUST include 3♦ (card code 0)
@@ -380,32 +451,29 @@ function getBotMove(handCards, lastCombo, isFirstMove, counts) {
 
     // If leading (lastCombo is null)
     if (!lastCombo) {
-        // Check if any 5-card combos exist (lowest straight, flush, full house, etc.)
-        var fiveList = [].concat(all.straights, all.flushes, all.fullHouses, all.quads, all.straightFlushes);
-        if (fiveList.length > 0) {
-            // Pick lowest 5-card combo
-            fiveList.sort(function(a, b) { return a.power - b.power; });
-            return { action: "play", cards: fiveList[0].cards };
-        }
-
-        // Otherwise, lead lowest pair if available (preferably not 2s unless only 2s remain)
-        if (all.pairs.length > 0) {
-            // Find lowest pair that is not 2s
-            for (var p = 0; p < all.pairs.length; p++) {
-                if (cardRank(all.pairs[p].cards[0]) < 12) {
-                    return { action: "play", cards: all.pairs[p].cards };
+        if (partition.length > 0) {
+            // Prefer 5-card combos from partition
+            for (var i = 0; i < partition.length; i++) {
+                if (partition[i].cards.length === 5) {
+                    return { action: "play", cards: partition[i].cards };
                 }
             }
-            return { action: "play", cards: all.pairs[0].cards };
+            // Prefer non-2 pair from partition
+            for (var j = 0; j < partition.length; j++) {
+                if (partition[j].type === "pair" && cardRank(partition[j].cards[0]) < 12) {
+                    return { action: "play", cards: partition[j].cards };
+                }
+            }
+            // Prefer non-2 single from partition
+            for (var k = 0; k < partition.length; k++) {
+                if (partition[k].type === "single" && cardRank(partition[k].cards[0]) < 12) {
+                    return { action: "play", cards: partition[k].cards };
+                }
+            }
+            return { action: "play", cards: partition[0].cards };
         }
 
-        // Otherwise lead lowest single (avoid 2s if possible)
-        for (var s = 0; s < all.singles.length; s++) {
-            if (cardRank(all.singles[s].cards[0]) < 12) {
-                return { action: "play", cards: all.singles[s].cards };
-            }
-        }
-        return { action: "play", cards: all.singles[0].cards };
+        return { action: "play", cards: [handCards[0]] };
     }
 
     // If responding to lastCombo
@@ -588,6 +656,7 @@ if (typeof module !== "undefined" && module.exports) {
         evaluateCombo: evaluateCombo,
         canBeat: canBeat,
         findAllCombos: findAllCombos,
+        decomposeHand: decomposeHand,
         getBotMove: getBotMove,
         isFiveCardType: isFiveCardType,
         isComboEmpty: isComboEmpty,

@@ -17,6 +17,7 @@ const jsCardsAdapter = {
     const n = Array.isArray(next) ? jsCards.evaluateCombo(next) : next;
     return jsCards.canBeat(n, p);
   },
+  decomposeHand: jsCards.decomposeHand,
   getBotMove: tsCards.getBotMove,
 };
 
@@ -474,6 +475,17 @@ implementations.forEach(({ name, engine }) => {
         // Should play the lowest beating 5-card combo, which is Straight 4-5-6-7-8
         expect(classifyCombo(beat5!)?.type).toBe('straight');
         expect(canBeat(leadStraight, beat5!)).toBe(true);
+      });
+
+      test('decomposeHand: partitions hand into minimal turn count', () => {
+        // Hand of 10 cards: Full House (33344), Pair (88), 3 Singles (J, K, 2)
+        // Total moves = 1 (FH) + 1 (Pair) + 3 (Singles) = 5 turns
+        const sampleHand = ['3♦', '3♣', '3♥', '4♦', '4♣', '8♦', '8♠', 'J♥', 'K♠', '2♠'].map(stringToCard);
+        const partition = engine.decomposeHand ? engine.decomposeHand(sampleHand) : tsCards.decomposeHand(sampleHand);
+
+        expect(partition.length).toBe(5);
+        expect(partition[0].cards.length).toBe(5); // Full house
+        expect(partition[1].cards.length).toBe(2); // Pair
       });
     });
   });

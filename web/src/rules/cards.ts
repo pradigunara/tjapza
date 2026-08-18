@@ -759,17 +759,75 @@ export function findAllBeatingCombos(
 }
 
 // -----------------------------------------------------------------------------
-// Greedy Bot AI
+// Advanced Hand Partitioning & Bot AI
 // -----------------------------------------------------------------------------
+
+/**
+ * Decomposes a hand into a partition of non-overlapping combinations that minimizes
+ * the total number of moves (turns) required to empty the hand.
+ */
+export function decomposeHand(hand: number[]): Combo[] {
+  if (!hand || hand.length === 0) return [];
+  const sorted = sortCards(hand);
+
+  let bestPartition: Combo[] = [];
+  let minTurns = 999;
+
+  function search(remaining: number[], current: Combo[]) {
+    if (remaining.length === 0) {
+      if (current.length < minTurns) {
+        minTurns = current.length;
+        bestPartition = [...current];
+      }
+      return;
+    }
+
+    // Pruning: if current count >= minTurns, can't beat best
+    if (current.length + 1 >= minTurns && minTurns !== 999) {
+      return;
+    }
+
+    // 1. Try 5-card combos
+    if (remaining.length >= 5) {
+      const fiveCombos = findAll5CardCombos(remaining);
+      for (const combo of fiveCombos) {
+        const nextRem = remaining.filter((c) => !combo.cards.includes(c));
+        search(nextRem, [...current, combo]);
+      }
+    }
+
+    // 2. Try Pairs
+    if (remaining.length >= 2) {
+      const pairs = findPairs(remaining);
+      for (const pair of pairs) {
+        const nextRem = remaining.filter((c) => !pair.cards.includes(c));
+        search(nextRem, [...current, pair]);
+      }
+    }
+
+    // 3. Base fallback: All remaining cards as singles
+    const singles = findSingles(remaining);
+    const fullPartition = [...current, ...singles];
+    if (fullPartition.length < minTurns) {
+      minTurns = fullPartition.length;
+      bestPartition = fullPartition;
+    }
+  }
+
+  search(sorted, []);
+  // Sort partition: 5-card combos first, then pairs, then singles (ascending power)
+  bestPartition.sort((a, b) => {
+    if (a.cards.length !== b.cards.length) {
+      return b.cards.length - a.cards.length; // 5-card > 2-card > 1-card
+    }
+    return compareCombos(a, b);
+  });
+  return bestPartition;
+}
 
 /**
  * Determines the best move for a bot given the hand and current game state.
  * Returns card codes to play, or `null` to pass.
- * 
- * Strategy:
- * - Opening Move: Must include 3♦. Lowest 5-card combo > Lowest pair > Single 3♦.
- * - Leading fresh trick: Lowest 5-card combo > Lowest pair (non-2) > Lowest single (non-2, < K).
- * - Beating last combo: Lowest legal beating play. Conserve 2s and >= K unless in endgame (opponent <= 3 cards).
  */
 export function getBotMove(
   hand: number[],
@@ -788,11 +846,20 @@ export function getBotMove(
     rankCounts[r] = (rankCounts[r] || 0) + 1;
   }
 
+  // Compute optimal hand partition (Minimum Moves to Empty Hand)
+  const partition = decomposeHand(sortedHand);
+
   // 1. OPENING TRICK (Must include 3♦)
   if (isOpeningTrick) {
     if (!sortedHand.includes(CARD_3D)) return null;
 
-    // Check 5-card combos containing 3♦
+    // Check if any combo in optimal partition contains 3♦
+    const partitionWith3D = partition.filter((c) => c.cards.includes(CARD_3D));
+    if (partitionWith3D.length > 0) {
+      return partitionWith3D[0].cards;
+    }
+
+    // Fallback: Check 5-card combos containing 3♦
     const fiveCardCombos = findAll5CardCombos(sortedHand).filter((c) =>
       c.cards.includes(CARD_3D)
     );
@@ -812,47 +879,37 @@ export function getBotMove(
 
   // 2. LEADING A FRESH TRICK
   if (!lastCombo) {
-    // 2a. Lowest 5-card combo
-    const fiveCardCombos = findAll5CardCombos(sortedHand);
-    if (fiveCardCombos.length > 0) {
-      return fiveCardCombos[0].cards;
-    }
-
-    // 2b. Lowest pair (prefer non-2s unless hand is only 2s or endgame)
-    const pairs = findPairs(sortedHand);
-    if (pairs.length > 0) {
-      const nonTwoPairs = pairs.filter((p) => p.mainRank !== RANK_2);
-      if (nonTwoPairs.length > 0) {
-        return nonTwoPairs[0].cards;
+    // Lead lowest combo from optimal partition to preserve clean decomposition
+    if (partition.length > 0) {
+      // 2a. Prefer 5-card combo from partition
+      const fiveCombos = partition.filter((c) => c.cards.length === 5);
+      if (fiveCombos.length > 0) {
+        return fiveCombos[0].cards;
       }
-      if (isEndgame || pairs.length === 1) {
-        return pairs[0].cards;
-      }
-    }
 
-    // 2c. Lowest single
-    // Prefer un-paired / un-tripled single (rankCount === 1)
-    const singles = findSingles(sortedHand);
-    const pureSingles = singles.filter((s) => rankCounts[s.mainRank] === 1);
-
-    if (pureSingles.length > 0) {
-      // Prefer pure singles < K (rank < 10)
-      const lowPureSingles = pureSingles.filter((s) => s.mainRank < RANK_K);
-      if (lowPureSingles.length > 0) {
-        return lowPureSingles[0].cards;
+      // 2b. Prefer non-2 pair from partition
+      const pairs = partition.filter((c) => c.type === 'pair');
+      if (pairs.length > 0) {
+        const nonTwoPairs = pairs.filter((p) => p.mainRank !== RANK_2);
+        if (nonTwoPairs.length > 0) {
+          return nonTwoPairs[0].cards;
+        }
+        if (isEndgame || partition.length === 1) {
+          return pairs[0].cards;
+        }
       }
-      // If only high pure singles, play the lowest pure single (prefer non-2)
-      const nonTwoPure = pureSingles.filter((s) => s.mainRank !== RANK_2);
-      if (nonTwoPure.length > 0) {
-        return nonTwoPure[0].cards;
-      }
-      return pureSingles[0].cards;
-    }
 
-    // If no pure singles, play lowest non-2 single
-    const nonTwoSingles = singles.filter((s) => s.mainRank !== RANK_2);
-    if (nonTwoSingles.length > 0) {
-      return nonTwoSingles[0].cards;
+      // 2c. Lowest single from partition (prefer non-2)
+      const singles = partition.filter((c) => c.type === 'single');
+      if (singles.length > 0) {
+        const nonTwoSingles = singles.filter((s) => s.mainRank !== RANK_2);
+        if (nonTwoSingles.length > 0) {
+          return nonTwoSingles[0].cards;
+        }
+        return singles[0].cards;
+      }
+
+      return partition[0].cards;
     }
 
     return [sortedHand[0]];
