@@ -59,19 +59,20 @@ function sortCards(cards) {
     });
 }
 
-// 10 Valid Straights in ascending power order (0..9)
+// 11 Valid Straights in ascending power order (0..10)
 // Each entry defines: ranks in straight, and top determining rank for comparison
 var VALID_STRAIGHTS = [
     { ranks: [11, 12, 0, 1, 2], topRank: 2 }, // 0: A-2-3-4-5 (top card is 5)
-    { ranks: [0, 1, 2, 3, 4],   topRank: 4 }, // 1: 3-4-5-6-7 (top card is 7)
-    { ranks: [1, 2, 3, 4, 5],   topRank: 5 }, // 2: 4-5-6-7-8 (top card is 8)
-    { ranks: [2, 3, 4, 5, 6],   topRank: 6 }, // 3: 5-6-7-8-9 (top card is 9)
-    { ranks: [3, 4, 5, 6, 7],   topRank: 7 }, // 4: 6-7-8-9-10 (top card is 10)
-    { ranks: [4, 5, 6, 7, 8],   topRank: 8 }, // 5: 7-8-9-10-J (top card is J)
-    { ranks: [5, 6, 7, 8, 9],   topRank: 9 }, // 6: 8-9-10-J-Q (top card is Q)
-    { ranks: [6, 7, 8, 9, 10],  topRank: 10 },// 7: 9-10-J-Q-K (top card is K)
-    { ranks: [7, 8, 9, 10, 11], topRank: 11 },// 8: 10-J-Q-K-A (top card is A)
-    { ranks: [8, 9, 10, 11, 12], topRank: 12 } // 9: J-Q-K-A-2 (top card is 2)
+    { ranks: [12, 0, 1, 2, 3],  topRank: 3 }, // 1: 2-3-4-5-6 (top card is 6)
+    { ranks: [0, 1, 2, 3, 4],   topRank: 4 }, // 2: 3-4-5-6-7 (top card is 7)
+    { ranks: [1, 2, 3, 4, 5],   topRank: 5 }, // 3: 4-5-6-7-8 (top card is 8)
+    { ranks: [2, 3, 4, 5, 6],   topRank: 6 }, // 4: 5-6-7-8-9 (top card is 9)
+    { ranks: [3, 4, 5, 6, 7],   topRank: 7 }, // 5: 6-7-8-9-10 (top card is 10)
+    { ranks: [4, 5, 6, 7, 8],   topRank: 8 }, // 6: 7-8-9-10-J (top card is J)
+    { ranks: [5, 6, 7, 8, 9],   topRank: 9 }, // 7: 8-9-10-J-Q (top card is Q)
+    { ranks: [6, 7, 8, 9, 10],  topRank: 10 },// 8: 9-10-J-Q-K (top card is K)
+    { ranks: [7, 8, 9, 10, 11], topRank: 11 },// 9: 10-J-Q-K-A (top card is A)
+    { ranks: [8, 9, 10, 11, 12], topRank: 12 } // 10: J-Q-K-A-2 (top card is 2)
 ];
 
 function checkStraightPattern(sortedRanks) {

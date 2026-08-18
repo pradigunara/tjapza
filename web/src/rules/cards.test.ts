@@ -140,10 +140,11 @@ implementations.forEach(({ name, engine }) => {
       });
     });
 
-    describe('All 10 Straights and Tiebreakers', () => {
-      // 10 valid straights in ascending order
+    describe('All 11 Straights and Tiebreakers', () => {
+      // 11 valid straights in ascending order
       const straightDefs = [
         { name: 'A-2-3-4-5', cards: ['A♦', '2♣', '3♥', '4♠', '5♦'], topRankCard: '5♦' },
+        { name: '2-3-4-5-6', cards: ['2♦', '3♣', '4♥', '5♠', '6♦'], topRankCard: '6♦' },
         { name: '3-4-5-6-7', cards: ['3♦', '4♣', '5♥', '6♠', '7♦'], topRankCard: '7♦' },
         { name: '4-5-6-7-8', cards: ['4♦', '5♣', '6♥', '7♠', '8♦'], topRankCard: '8♦' },
         { name: '5-6-7-8-9', cards: ['5♦', '6♣', '7♥', '8♠', '9♦'], topRankCard: '9♦' },
@@ -155,7 +156,7 @@ implementations.forEach(({ name, engine }) => {
         { name: 'J-Q-K-A-2', cards: ['J♦', 'Q♣', 'K♥', 'A♠', '2♦'], topRankCard: '2♦' },
       ];
 
-      test('classifies all 10 valid straights correctly', () => {
+      test('classifies all 11 valid straights correctly', () => {
         straightDefs.forEach((def, index) => {
           const cards = def.cards.map(stringToCard);
           const combo = classifyCombo(cards);
@@ -165,13 +166,31 @@ implementations.forEach(({ name, engine }) => {
         });
       });
 
-      test('validates ascending order across all 10 straights: straight[i] < straight[i+1]', () => {
+      test('validates ascending order across all 11 straights: straight[i] < straight[i+1]', () => {
         for (let i = 0; i < straightDefs.length - 1; i++) {
           const lower = straightDefs[i].cards.map(stringToCard);
           const higher = straightDefs[i + 1].cards.map(stringToCard);
           expect(canBeat(lower, higher)).toBe(true);
           expect(canBeat(higher, lower)).toBe(false);
         }
+      });
+
+      test('2-3-4-5-6 is valid straight with top card 6 (beats A-2-3-4-5, loses to 3-4-5-6-7)', () => {
+        const straightA2345 = ['A♦', '2♦', '3♦', '4♦', '5♠'].map(stringToCard);
+        const straight23456_low = ['2♦', '3♦', '4♦', '5♦', '6♣'].map(stringToCard); // top 6♣ (suit 1)
+        const straight23456_high = ['2♥', '3♥', '4♥', '5♣', '6♠'].map(stringToCard); // top 6♠ (suit 3)
+        const straight34567 = ['3♦', '4♣', '5♥', '6♠', '7♦'].map(stringToCard);
+
+        const comboLow = classifyCombo(straight23456_low);
+        const comboHigh = classifyCombo(straight23456_high);
+
+        expect(comboLow?.mainRank).toBe(3); // rank 6
+        expect(comboLow?.suit).toBe(1); // 6♣
+        expect(comboHigh?.suit).toBe(3); // 6♠
+
+        expect(canBeat(straightA2345, straight23456_low)).toBe(true);
+        expect(canBeat(straight23456_low, straight23456_high)).toBe(true);
+        expect(canBeat(straight23456_high, straight34567)).toBe(true);
       });
 
       test('A-2-3-4-5 is lowest straight, top card determining rank is 5', () => {
@@ -208,12 +227,10 @@ implementations.forEach(({ name, engine }) => {
         expect(canBeat(straight7S, straight7D)).toBe(false);
       });
 
-      test('rejects invalid straights 2-3-4-5-6 and Q-K-A-2-3', () => {
-        const invalid23456 = ['2♦', '3♣', '4♥', '5♠', '6♦'].map(stringToCard);
+      test('rejects invalid straights Q-K-A-2-3 and K-A-2-3-4', () => {
         const invalidQKA23 = ['Q♦', 'K♣', 'A♥', '2♠', '3♦'].map(stringToCard);
         const invalidKA234 = ['K♦', 'A♣', '2♥', '3♠', '4♦'].map(stringToCard);
 
-        expect(classifyCombo(invalid23456)).toBeNull();
         expect(classifyCombo(invalidQKA23)).toBeNull();
         expect(classifyCombo(invalidKA234)).toBeNull();
       });
@@ -377,8 +394,8 @@ implementations.forEach(({ name, engine }) => {
         const flushes = findFlushes(hand); // 3♦, 4♦, 5♦, 6♦, 7♦, A♦, 2♦ -> 7 diamonds!
         expect(flushes.length).toBeGreaterThan(0);
 
-        const straightFlushes = findStraightFlushes(hand); // 3♦-4♦-5♦-6♦-7♦, A♦-2♦-3♦-4♦-5♦
-        expect(straightFlushes.length).toBe(2);
+        const straightFlushes = findStraightFlushes(hand); // 3♦-4♦-5♦-6♦-7♦, 2♦-3♦-4♦-5♦-6♦, A♦-2♦-3♦-4♦-5♦
+        expect(straightFlushes.length).toBe(3);
       });
     });
 

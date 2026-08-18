@@ -75,15 +75,16 @@ export interface StraightPattern {
 
 export const STRAIGHT_PATTERNS: StraightPattern[] = [
   { order: 0, ranks: [0, 1, 2, 11, 12], topRank: 2, name: 'A-2-3-4-5' },
-  { order: 1, ranks: [0, 1, 2, 3, 4], topRank: 4, name: '3-4-5-6-7' },
-  { order: 2, ranks: [1, 2, 3, 4, 5], topRank: 5, name: '4-5-6-7-8' },
-  { order: 3, ranks: [2, 3, 4, 5, 6], topRank: 6, name: '5-6-7-8-9' },
-  { order: 4, ranks: [3, 4, 5, 6, 7], topRank: 7, name: '6-7-8-9-10' },
-  { order: 5, ranks: [4, 5, 6, 7, 8], topRank: 8, name: '7-8-9-10-J' },
-  { order: 6, ranks: [5, 6, 7, 8, 9], topRank: 9, name: '8-9-10-J-Q' },
-  { order: 7, ranks: [6, 7, 8, 9, 10], topRank: 10, name: '9-10-J-Q-K' },
-  { order: 8, ranks: [7, 8, 9, 10, 11], topRank: 11, name: '10-J-Q-K-A' },
-  { order: 9, ranks: [8, 9, 10, 11, 12], topRank: 12, name: 'J-Q-K-A-2' },
+  { order: 1, ranks: [0, 1, 2, 3, 12], topRank: 3, name: '2-3-4-5-6' },
+  { order: 2, ranks: [0, 1, 2, 3, 4], topRank: 4, name: '3-4-5-6-7' },
+  { order: 3, ranks: [1, 2, 3, 4, 5], topRank: 5, name: '4-5-6-7-8' },
+  { order: 4, ranks: [2, 3, 4, 5, 6], topRank: 6, name: '5-6-7-8-9' },
+  { order: 5, ranks: [3, 4, 5, 6, 7], topRank: 7, name: '6-7-8-9-10' },
+  { order: 6, ranks: [4, 5, 6, 7, 8], topRank: 8, name: '7-8-9-10-J' },
+  { order: 7, ranks: [5, 6, 7, 8, 9], topRank: 9, name: '8-9-10-J-Q' },
+  { order: 8, ranks: [6, 7, 8, 9, 10], topRank: 10, name: '9-10-J-Q-K' },
+  { order: 9, ranks: [7, 8, 9, 10, 11], topRank: 11, name: '10-J-Q-K-A' },
+  { order: 10, ranks: [8, 9, 10, 11, 12], topRank: 12, name: 'J-Q-K-A-2' },
 ];
 
 export interface Combo {
