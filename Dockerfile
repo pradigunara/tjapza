@@ -29,13 +29,8 @@ COPY pb/pb_migrations /app/pb_migrations
 # Copy static frontend assets built in stage 1
 COPY --from=frontend-builder /app/pb/pb_public /app/pb_public
 
-# Create appuser with non-root UID 10001
-RUN addgroup -g 10001 appuser && \
-    adduser -u 10001 -G appuser -s /bin/sh -D appuser && \
-    mkdir -p /app/pb_data && \
-    chown -R appuser:appuser /app
-
-USER appuser
+# Create pb_data directory
+RUN mkdir -p /app/pb_data
 
 EXPOSE 8090
 
