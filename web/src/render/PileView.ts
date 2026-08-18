@@ -13,6 +13,7 @@ export class PileView extends Container {
 
   private currentCombo: LastCombo | null = null;
   private cardSprites: CardSprite[] = [];
+  private clearTimer: number | null = null;
 
   constructor() {
     super();
@@ -57,6 +58,11 @@ export class PileView extends Container {
     if (!combo || !combo.cards || combo.cards.length === 0) {
       this.clearPile();
       return;
+    }
+
+    if (this.clearTimer !== null) {
+      clearTimeout(this.clearTimer);
+      this.clearTimer = null;
     }
 
     // Check if same combo
@@ -135,21 +141,29 @@ export class PileView extends Container {
   public clearPile(): void {
     if (this.currentCombo === null && this.cardSprites.length === 0) return;
 
+    if (this.clearTimer !== null) {
+      clearTimeout(this.clearTimer);
+      this.clearTimer = null;
+    }
+
     this.currentCombo = null;
     this.bannerContainer.visible = false;
 
-    // Animate cards fading away
-    for (const sprite of this.cardSprites) {
+    // Isolate retiring sprites so subsequent setCombo calls are never destroyed
+    const retiringSprites = [...this.cardSprites];
+    this.cardSprites = [];
+
+    for (const sprite of retiringSprites) {
       sprite.targetAlpha = 0;
       sprite.targetY = sprite.y - 40;
     }
 
-    setTimeout(() => {
-      for (const sprite of this.cardSprites) {
+    this.clearTimer = window.setTimeout(() => {
+      this.clearTimer = null;
+      for (const sprite of retiringSprites) {
         this.cardContainer.removeChild(sprite);
         sprite.destroy();
       }
-      this.cardSprites = [];
     }, 280);
   }
 

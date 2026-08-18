@@ -37,9 +37,9 @@ export class GameHeartbeat {
 
   public start(): void {
     if (this.timer) return;
-    // Continuous background safety poll every 600ms
-    this.timer = window.setInterval(() => this.tick(), 600);
-    this.triggerImmediate(100);
+    // Continuous background safety poll every 800ms
+    this.timer = window.setInterval(() => this.tick(), 800);
+    this.triggerImmediate(300);
   }
 
   public stop(): void {
@@ -53,7 +53,7 @@ export class GameHeartbeat {
     }
   }
 
-  public triggerImmediate(delayMs = 200): void {
+  public triggerImmediate(delayMs = 900): void {
     if (this.isTicking) {
       this.hasPendingNextTick = true;
       return;
@@ -115,7 +115,7 @@ export class GameHeartbeat {
       // Primary ticker is the lowest active human; secondary humans act as fallback
       const isPrimary = lowestHumanSeat === localSeat || lowestHumanSeat === -1;
       const turnElapsed = timer.getElapsedMs();
-      const fallbackThreshold = isBotOnlyRemaining ? 200 : 900;
+      const fallbackThreshold = isBotOnlyRemaining ? 250 : 1200;
 
       if (!isPrimary && turnElapsed < fallbackThreshold) {
         return;
@@ -136,11 +136,11 @@ export class GameHeartbeat {
         this.isTicking = false;
         if (tickSuccess) {
           if (isPrimary) {
-            const delay = isBotOnlyRemaining ? 200 : 350;
+            const delay = isBotOnlyRemaining ? 250 : 900;
             this.triggerImmediate(delay);
           } else if (this.hasPendingNextTick) {
             this.hasPendingNextTick = false;
-            this.triggerImmediate(300);
+            this.triggerImmediate(500);
           }
         }
       }
