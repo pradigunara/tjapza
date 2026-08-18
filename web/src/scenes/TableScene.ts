@@ -435,7 +435,21 @@ export class TableScene {
       <!-- Center Lobby Waiting Overlay -->
       ${
         isWaiting
-          ? `
+          ? (() => {
+              let hostSeatIndex = -1;
+              for (let i = 0; i < 4; i++) {
+                if (seats[i] && seats[i]?.user_id && !seats[i]?.is_bot) {
+                  hostSeatIndex = i;
+                  break;
+                }
+              }
+              const isHost = this.localSeatIndex === hostSeatIndex;
+              const hostName =
+                hostSeatIndex !== -1 && seats[hostSeatIndex]
+                  ? seats[hostSeatIndex]?.name
+                  : 'Host';
+
+              return `
         <div class="table-waiting-overlay">
           <div class="waiting-card">
             <h2 class="waiting-title">Game Lobby</h2>
@@ -446,9 +460,13 @@ export class TableScene {
                 .map((idx) => {
                   const s = seats[idx];
                   const occupied = s && s.user_id;
+                  const isSeatHost = idx === hostSeatIndex;
                   return `
                   <div class="waiting-seat-box ${occupied ? 'occupied' : 'empty'} ${idx === this.localSeatIndex ? 'is-self' : ''}">
-                    <div class="waiting-seat-num">Seat ${idx + 1}</div>
+                    <div class="waiting-seat-num">
+                      Seat ${idx + 1}
+                      ${isSeatHost ? '<span class="host-badge" title="Room Host">👑 Host</span>' : ''}
+                    </div>
                     <div class="waiting-seat-avatar">${occupied ? s.name.charAt(0).toUpperCase() : '👤'}</div>
                     <div class="waiting-seat-name">${occupied ? s.name : 'Waiting…'}</div>
                   </div>
@@ -459,11 +477,16 @@ export class TableScene {
 
             <div class="waiting-actions">
               <button id="btn-share-room" class="btn-secondary">Share Room Link</button>
-              <button id="btn-start-game" class="btn-primary btn-gold btn-lg">Start Game (Fill Bots)</button>
+              ${
+                isHost
+                  ? `<button id="btn-start-game" class="btn-primary btn-gold btn-lg">Start Game (Fill Bots)</button>`
+                  : `<div class="waiting-host-notice">⏳ Waiting for host (<strong>${hostName}</strong>) to start…</div>`
+              }
             </div>
           </div>
         </div>
-      `
+      `;
+            })()
           : ''
       }
 

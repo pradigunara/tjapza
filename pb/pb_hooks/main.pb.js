@@ -160,16 +160,18 @@ routerAdd("POST", "/api/tjapza/room/start", (c) => {
     }
 
     var seats = cards.getRecordJSON(game, "seats", []);
-    // Verify caller is seated in the room
-    var isSeated = false;
+
+    // Determine current room host (lowest occupied human seat)
+    var hostSeatIndex = -1;
     for (var k = 0; k < 4; k++) {
-        if (seats[k] && seats[k].user_id === auth.id) {
-            isSeated = true;
+        if (seats[k] && seats[k].user_id && !seats[k].is_bot) {
+            hostSeatIndex = k;
             break;
         }
     }
-    if (!isSeated) {
-        return c.forbiddenError("You are not seated in this room");
+
+    if (hostSeatIndex === -1 || seats[hostSeatIndex].user_id !== auth.id) {
+        return c.forbiddenError("Only the room host can start the game");
     }
 
     // Fill empty seats with bots
