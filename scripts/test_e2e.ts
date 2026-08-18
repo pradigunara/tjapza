@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
 import PocketBase from "../web/node_modules/pocketbase";
-import { classifyCombo, getBotMove } from "../web/src/rules/cards";
+import { CardCombo, BotEngine, Hand, Trick } from "../web/src/domain";
 
 const PB_PORT = 8095;
 const PB_URL = `http://127.0.0.1:${PB_PORT}`;
@@ -20,10 +20,10 @@ async function runE2E() {
     console.log("[PB]", data.toString().trim());
   });
   server.stderr?.on("data", (data) => {
-    console.error("[PB-ERR]", data.toString().trim());
+    console.error("[PB ERR]", data.toString().trim());
   });
 
-  // Wait for server to become responsive
+  // Wait for server to boot
   let ready = false;
   for (let i = 0; i < 30; i++) {
     try {
@@ -39,42 +39,42 @@ async function runE2E() {
 
   if (!ready) {
     server.kill();
-    throw new Error("PocketBase server failed to start on " + PB_URL);
+    throw new Error("Failed to start PocketBase test server");
   }
-  console.log("✅ PocketBase server started on " + PB_URL);
+
+  console.log(`✅ PocketBase server started on ${PB_URL}`);
 
   try {
+    // 2. Initialize Client and Authenticate
     const pb = new PocketBase(PB_URL);
-
-    // 2. Auth as Guest / Test User
     const email = `test_${Date.now()}@tjapza.local`;
     const password = "Password123!";
     const user = await pb.collection("users").create({
       email,
       password,
       passwordConfirm: password,
-      display_name: "Human Player 1",
+      name: "Human Player 1",
     });
     await pb.collection("users").authWithPassword(email, password);
-    console.log("✅ Authenticated as:", user.email, "id:", pb.authStore.record?.id);
+    console.log("✅ Authenticated as:", user.name, "id:", pb.authStore.record?.id);
 
-    // 3. Create Private Room
-    const roomRes = await pb.send("/api/tjapza/room/create", {
+    // 3. Create a room
+    const createRes = await pb.send("/api/tjapza/room/create", {
       method: "POST",
       body: { is_public: false },
     });
-    const gameId = roomRes.game.id;
-    const roomCode = roomRes.game.room_code;
-    console.log(`✅ Created Room: ${roomCode} (Game ID: ${gameId})`);
+    const gameId = createRes.game.id;
+    const roomCode = createRes.game.room_code;
+    console.log("✅ Created Room:", roomCode, `(Game ID: ${gameId})`);
 
-    // 4. Start Game
+    // 4. Start the game (fills remaining seats with bots)
     const startRes = await pb.send("/api/tjapza/room/start", {
       method: "POST",
       body: { game_id: gameId },
     });
     console.log("✅ Game Started! Initial turn:", startRes.game.turn_index, "Seats:", startRes.game.seats);
 
-    // 5. Game Loop until finished
+    // 5. Game Loop Simulation
     let game = startRes.game;
     let turnCount = 0;
     const maxTurns = 200;
@@ -85,20 +85,24 @@ async function runE2E() {
       const isHuman = game.seats[currentTurn]?.user_id === pb.authStore.record?.id;
 
       if (isHuman) {
-        // Fetch human hand
         const handRecord = await pb.collection("hands").getFirstListItem(
           `game_id = "${game.id}" && user_id = "${pb.authStore.record?.id}"`
         );
         const myCards: number[] = handRecord.cards;
         const isOpeningTrick = !game.last_combo && game.counts.every((c: number) => c === 13);
-        const otherCounts = game.counts.filter((c: number, idx: number) => idx !== currentTurn && c > 0);
-        const opponentMinCards = otherCounts.length > 0 ? Math.min(...otherCounts) : 13;
 
-        // Use bot logic or smart combo for human automated move
-        const moveCards = getBotMove(myCards, game.last_combo?.cards || game.last_combo, isOpeningTrick, opponentMinCards);
+        const move = BotEngine.decideMove({
+          hand: new Hand(myCards),
+          trick: game.last_combo && game.last_combo.cards?.length > 0
+            ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
+            : Trick.createFresh(currentTurn),
+          isOpeningMove: isOpeningTrick,
+          counts: game.counts,
+        });
 
-        if (moveCards && moveCards.length > 0) {
-          const combo = classifyCombo(moveCards);
+        if (move.action === "play" && move.cards.length > 0) {
+          const moveCards = move.cards.map((c) => c.code);
+          const combo = CardCombo.evaluate(moveCards);
           console.log(`[Turn ${turnCount}] 👤 Human Seat ${currentTurn} plays:`, moveCards, combo?.type);
           await pb.collection("moves").create({
             game_id: game.id,

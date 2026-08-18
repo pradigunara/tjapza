@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build:domain": "bun -e \"require('esbuild').buildSync({ entryPoints: ['src/domain/index.ts'], outfile: '../pb/pb_hooks/domain.js', bundle: true, format: 'cjs', target: 'es2015' });\"",
+    "build": "bun run build:domain && tsc && vite build",
+    "test": "bun test",
     "preview": "vite preview"
   },
   "dependencies": {

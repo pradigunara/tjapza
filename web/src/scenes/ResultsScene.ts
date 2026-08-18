@@ -1,5 +1,6 @@
-import type { GameRecord, ResultRecord } from '../net/pb';
-import { rematch, fetchResults, joinRoom, pb } from '../net/pb';
+import type { GameRecord } from '../net/pb';
+import { rematch, joinRoom, pb } from '../net/pb';
+import { Podium, Seat } from '../domain';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 import { escapeHtml } from '../ui/escape';
@@ -15,7 +16,6 @@ export class ResultsScene {
   private localSeatIndex: number;
   private callbacks: ResultsCallbacks;
 
-  private results: ResultRecord[] = [];
   private countdownTimer: number | null = null;
   private secondsLeft = 30;
   private isRematching = false;
@@ -39,12 +39,22 @@ export class ResultsScene {
   public async mount(parent: HTMLElement): Promise<void> {
     parent.appendChild(this.container);
 
-    // Fetch full results
-    this.results = await fetchResults(this.game.id);
+    // Determine local player's rank using Podium
+    const seats = (this.game.seats || []).map((s, idx) =>
+      s
+        ? new Seat({
+            index: idx,
+            userId: s.user_id,
+            name: s.name,
+            isBot: s.is_bot,
+            connected: s.connected,
+            cardCount: this.game.counts?.[idx] ?? 0,
+          })
+        : Seat.createEmpty(idx)
+    );
 
-    // Determine local player's rank
-    const localResult = this.results.find((r) => r.seat_index === this.localSeatIndex);
-    const localRank = localResult ? localResult.rank : 4;
+    const podium = new Podium(this.game.winner_ranks || [], this.game.counts || [], seats);
+    const localRank = podium.getRank(this.localSeatIndex);
 
     if (localRank === 1) {
       sound.playWin();
@@ -105,46 +115,22 @@ export class ResultsScene {
   }
 
   private render(): void {
-    const seats = this.game.seats || [];
+    const seats = (this.game.seats || []).map((s, idx) =>
+      s
+        ? new Seat({
+            index: idx,
+            userId: s.user_id,
+            name: s.name,
+            isBot: s.is_bot,
+            connected: s.connected,
+            cardCount: this.game.counts?.[idx] ?? 0,
+          })
+        : Seat.createEmpty(idx)
+    );
 
-    // Order players by rank (1..4)
-    const rankedPlayers: Array<{
-      rank: number;
-      name: string;
-      isBot: boolean;
-      isLocal: boolean;
-      seatIndex: number;
-    }> = [];
-
-    for (let r = 1; r <= 4; r++) {
-      const res = this.results.find((item) => item.rank === r);
-      if (res) {
-        const seat = seats[res.seat_index];
-        rankedPlayers.push({
-          rank: r,
-          name: seat?.name || `Player ${res.seat_index + 1}`,
-          isBot: !!res.is_bot,
-          isLocal: res.seat_index === this.localSeatIndex,
-          seatIndex: res.seat_index,
-        });
-      } else {
-        // Fallback to game.winner_ranks if results not fully recorded yet
-        const winnerSeat = this.game.winner_ranks ? this.game.winner_ranks[r - 1] : undefined;
-        if (winnerSeat !== undefined) {
-          const seat = seats[winnerSeat];
-          rankedPlayers.push({
-            rank: r,
-            name: seat?.name || `Player ${winnerSeat + 1}`,
-            isBot: !!seat?.is_bot,
-            isLocal: winnerSeat === this.localSeatIndex,
-            seatIndex: winnerSeat,
-          });
-        }
-      }
-    }
-
-    const localResult = rankedPlayers.find((p) => p.isLocal);
-    const localRank = localResult ? localResult.rank : 4;
+    const podium = new Podium(this.game.winner_ranks || [], this.game.counts || [], seats);
+    const standings = podium.getStandings();
+    const localRank = podium.getRank(this.localSeatIndex);
     const isWinner = localRank === 1;
 
     this.container.innerHTML = `
@@ -160,19 +146,18 @@ export class ResultsScene {
 
         <!-- Podium & Scoreboard -->
         <div class="results-scoreboard">
-          ${rankedPlayers
+          ${standings
             .map((p) => {
-              const medal =
-                p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : '4th';
+              const isLocal = p.seatIndex === this.localSeatIndex;
               return `
-                <div class="score-row ${p.isLocal ? 'score-row-local' : ''} rank-${p.rank}">
-                  <div class="score-rank-badge">${medal}</div>
+                <div class="score-row ${isLocal ? 'score-row-local' : ''} rank-${p.rank}">
+                  <div class="score-rank-badge">${p.medal}</div>
                   <div class="score-avatar">${p.isBot ? '🤖' : escapeHtml(p.name.charAt(0).toUpperCase())}</div>
                   <div class="score-name-col">
-                    <span class="score-name">${escapeHtml(p.name)} ${p.isLocal ? '(You)' : ''}</span>
+                    <span class="score-name">${escapeHtml(p.name)} ${isLocal ? '(You)' : ''}</span>
                     <span class="score-role">${p.isBot ? 'Bot' : 'Player'}</span>
                   </div>
-                  <div class="score-place-label">${p.rank}${this.getOrdinal(p.rank)} Place</div>
+                  <div class="score-place-label">${p.title}</div>
                 </div>
               `;
             })

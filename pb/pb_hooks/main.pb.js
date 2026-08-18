@@ -9,47 +9,52 @@
  * Creates a new game room.
  */
 routerAdd("POST", "/api/tjapza/room/create", (c) => {
-    var cards = require(__hooks + "/cards.js");
-    var auth = c.auth;
-    if (!auth) {
-        return c.unauthorizedError("Authentication required to create a room");
+    try {
+        var domain = require(__hooks + "/domain.js");
+        var auth = c.auth;
+        if (!auth) {
+            return c.unauthorizedError("Authentication required to create a room");
+        }
+
+        var reqInfo = c.requestInfo();
+        var body = reqInfo.body || {};
+        var isPublic = !!body.is_public;
+
+        var roomCode = domain.RoomCode.generate().value;
+        var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player 1";
+
+        var seat0 = {
+            user_id: auth.id,
+            name: displayName,
+            is_bot: false,
+            connected: true
+        };
+
+        var gamesColl = $app.findCollectionByNameOrId("games");
+        var game = new Record(gamesColl, {
+            status: "waiting",
+            room_code: roomCode,
+            is_public: isPublic,
+            seats: [seat0, null, null, null],
+            turn_index: 0,
+            leader_index: 0,
+            last_combo: null,
+            pass_count: 0,
+            counts: [13, 13, 13, 13],
+            winner_ranks: [],
+            turn_started_at: ""
+        });
+
+        $app.save(game);
+
+        return c.json(200, {
+            game: game,
+            seat_index: 0
+        });
+    } catch (err) {
+        console.error("ROOM_CREATE_ERR:", err);
+        return c.badRequestError(err.message || String(err));
     }
-
-    var reqInfo = c.requestInfo();
-    var body = reqInfo.body || {};
-    var isPublic = !!body.is_public;
-
-    var roomCode = cards.generateRoomCode();
-    var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player 1";
-
-    var seat0 = {
-        user_id: auth.id,
-        name: displayName,
-        is_bot: false,
-        connected: true
-    };
-
-    var gamesColl = $app.findCollectionByNameOrId("games");
-    var game = new Record(gamesColl, {
-        status: "waiting",
-        room_code: roomCode,
-        is_public: isPublic,
-        seats: [seat0, null, null, null],
-        turn_index: 0,
-        leader_index: 0,
-        last_combo: null,
-        pass_count: 0,
-        counts: [13, 13, 13, 13],
-        winner_ranks: [],
-        turn_started_at: ""
-    });
-
-    $app.save(game);
-
-    return c.json(200, {
-        game: game,
-        seat_index: 0
-    });
 }, $apis.requireAuth());
 
 /**
@@ -57,365 +62,374 @@ routerAdd("POST", "/api/tjapza/room/create", (c) => {
  * Joins an existing game room by room_code or game_id.
  */
 routerAdd("POST", "/api/tjapza/room/join", (c) => {
-    var cards = require(__hooks + "/cards.js");
-    var auth = c.auth;
-    if (!auth) {
-        return c.unauthorizedError("Authentication required to join a room");
-    }
-
-    var reqInfo = c.requestInfo();
-    var body = reqInfo.body || {};
-    var roomCode = body.room_code ? String(body.room_code).toUpperCase().trim() : "";
-    var gameId = body.game_id ? String(body.game_id).trim() : "";
-
-    var game = null;
-    if (gameId) {
-        try {
-            game = $app.findRecordById("games", gameId);
-        } catch (e) {}
-    } else if (roomCode) {
-        try {
-            game = $app.findFirstRecordByFilter("games", "room_code = {:code} && status = 'waiting'", { code: roomCode });
-        } catch (e) {}
-    }
-
-    if (!game) {
-        return c.notFoundError("Room not found or no longer waiting for players");
-    }
-
-    if (game.getString("status") !== "waiting") {
-        return c.badRequestError("Game is already in progress or finished");
-    }
-
-    var seats = cards.getRecordJSON(game, "seats", []);
-    var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
-
-    // Check if user is already seated
-    for (var i = 0; i < 4; i++) {
-        if (seats[i] && seats[i].user_id === auth.id) {
-            return c.json(200, {
-                game: game,
-                seat_index: i
-            });
+    try {
+        var domain = require(__hooks + "/domain.js");
+        var auth = c.auth;
+        if (!auth) {
+            return c.unauthorizedError("Authentication required to join a room");
         }
-    }
 
-    // Find first empty seat
-    var emptySeat = -1;
-    for (var j = 0; j < 4; j++) {
-        if (!seats[j] || !seats[j].user_id) {
-            emptySeat = j;
-            break;
+        var reqInfo = c.requestInfo();
+        var body = reqInfo.body || {};
+        var roomCode = body.room_code ? domain.RoomCode.clean(body.room_code) : "";
+        var gameId = body.game_id ? String(body.game_id).trim() : "";
+
+        var game = null;
+        if (gameId) {
+            try {
+                game = $app.findRecordById("games", gameId);
+            } catch (e) {}
+        } else if (roomCode) {
+            try {
+                game = $app.findFirstRecordByFilter("games", "room_code = {:code} && status = 'waiting'", { code: roomCode });
+            } catch (e) {}
         }
+
+        if (!game) {
+            return c.notFoundError("Room not found or no longer waiting for players");
+        }
+
+        if (game.getString("status") !== "waiting") {
+            return c.badRequestError("Game is already in progress or finished");
+        }
+
+        var seats = domain.parseJSON(game.get("seats"), []);
+        var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
+
+        // Check if user is already seated
+        for (var i = 0; i < 4; i++) {
+            if (seats[i] && seats[i].user_id === auth.id) {
+                return c.json(200, {
+                    game: game,
+                    seat_index: i
+                });
+            }
+        }
+
+        // Find first empty seat
+        var targetSeat = -1;
+        for (var s = 0; s < 4; s++) {
+            if (!seats[s] || (!seats[s].user_id && !seats[s].is_bot)) {
+                targetSeat = s;
+                break;
+            }
+        }
+
+        if (targetSeat === -1) {
+            return c.badRequestError("Room is already full");
+        }
+
+        seats[targetSeat] = {
+            user_id: auth.id,
+            name: displayName,
+            is_bot: false,
+            connected: true
+        };
+
+        game.set("seats", seats);
+        $app.save(game);
+
+        return c.json(200, {
+            game: game,
+            seat_index: targetSeat
+        });
+    } catch (err) {
+        console.error("ROOM_JOIN_ERR:", err);
+        return c.badRequestError(err.message || String(err));
     }
-
-    if (emptySeat === -1) {
-        return c.badRequestError("Room is full");
-    }
-
-    seats[emptySeat] = {
-        user_id: auth.id,
-        name: displayName,
-        is_bot: false,
-        connected: true
-    };
-
-    game.set("seats", seats);
-    $app.save(game);
-
-    return c.json(200, {
-        game: game,
-        seat_index: emptySeat
-    });
 }, $apis.requireAuth());
 
 /**
  * POST /api/tjapza/room/start
- * Starts a waiting game. Any empty seats are filled with deterministic bots.
+ * Starts game early, filling any remaining empty seats with bots.
  */
 routerAdd("POST", "/api/tjapza/room/start", (c) => {
-    var cards = require(__hooks + "/cards.js");
-    var auth = c.auth;
-    if (!auth) {
-        return c.unauthorizedError("Authentication required to start room");
-    }
-
-    var reqInfo = c.requestInfo();
-    var body = reqInfo.body || {};
-    var gameId = body.game_id ? String(body.game_id).trim() : "";
-
-    if (!gameId) {
-        return c.badRequestError("game_id is required");
-    }
-
-    var game = null;
     try {
-        game = $app.findRecordById("games", gameId);
-    } catch (e) {
-        return c.notFoundError("Game not found");
-    }
-
-    if (game.getString("status") !== "waiting") {
-        return c.badRequestError("Game is not in waiting state");
-    }
-
-    var seats = cards.getRecordJSON(game, "seats", []);
-
-    // Determine current room host (lowest occupied human seat)
-    var hostSeatIndex = -1;
-    for (var k = 0; k < 4; k++) {
-        if (seats[k] && seats[k].user_id && !seats[k].is_bot) {
-            hostSeatIndex = k;
-            break;
+        var domain = require(__hooks + "/domain.js");
+        var gameService = require(__hooks + "/game_service.js");
+        var auth = c.auth;
+        if (!auth) {
+            return c.unauthorizedError("Authentication required to start the game");
         }
-    }
 
-    var isPublic = game.getBool("is_public");
-    var createdTime = new Date(game.getString("created")).getTime();
-    var isPublicTimedOut = isPublic && (Date.now() - createdTime >= 30000);
+        var reqInfo = c.requestInfo();
+        var body = reqInfo.body || {};
+        var gameId = body.game_id ? String(body.game_id).trim() : "";
 
-    // Host can always start; In public rooms, any seated player can start after 30s countdown
-    var isCallerHost = (hostSeatIndex !== -1 && seats[hostSeatIndex].user_id === auth.id);
-    var isCallerSeated = false;
-    for (var s = 0; s < 4; s++) {
-        if (seats[s] && seats[s].user_id === auth.id) {
-            isCallerSeated = true;
-            break;
+        if (!gameId) {
+            return c.badRequestError("game_id is required");
         }
-    }
 
-    if (!isCallerHost && !(isPublicTimedOut && isCallerSeated)) {
-        return c.forbiddenError("Only the room host can start the game (or auto-start after 30s in public matches)");
-    }
-
-    // Fill empty seats with bots
-    for (var i = 0; i < 4; i++) {
-        if (!seats[i] || !seats[i].user_id) {
-            seats[i] = {
-                user_id: null,
-                name: "Bot " + (i + 1),
-                is_bot: true,
-                connected: true
-            };
+        var game = null;
+        try {
+            game = $app.findRecordById("games", gameId);
+        } catch (e) {
+            return c.notFoundError("Game not found");
         }
+
+        var seats = domain.parseJSON(game.get("seats"), []);
+        var domainRoom = new domain.Room({
+            id: game.id,
+            code: game.getString("room_code"),
+            status: "waiting",
+            seats: seats
+        });
+
+        var hostIndex = domainRoom.hostSeatIndex;
+        if (hostIndex === -1 || !seats[hostIndex] || seats[hostIndex].user_id !== auth.id) {
+            return c.forbiddenError("Only the room host can start the game");
+        }
+
+        // Fill remaining empty slots with bots
+        var botNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta"];
+        for (var i = 0; i < 4; i++) {
+            if (!seats[i] || (!seats[i].user_id && !seats[i].is_bot)) {
+                seats[i] = {
+                    user_id: null,
+                    name: botNames[i] || ("Bot " + (i + 1)),
+                    is_bot: true,
+                    connected: true
+                };
+            }
+        }
+
+        game.set("seats", seats);
+        $app.save(game);
+
+        // Deal cards and transition to playing state
+        gameService.dealAndStartGame(game);
+
+        return c.json(200, {
+            game: game
+        });
+    } catch (err) {
+        console.error("ROOM_START_ERR:", err);
+        return c.badRequestError(err.message || String(err));
     }
-    game.set("seats", seats);
-
-    cards.dealAndStartGame(game);
-
-    return c.json(200, {
-        game: game
-    });
 }, $apis.requireAuth());
 
 /**
  * POST /api/tjapza/quickplay
- * Quick matchmaking: joins an open public game or creates a new one.
+ * Finds an open public game room or creates a new one.
  */
 routerAdd("POST", "/api/tjapza/quickplay", (c) => {
-    var cards = require(__hooks + "/cards.js");
-    var auth = c.auth;
-    if (!auth) {
-        return c.unauthorizedError("Authentication required for quickplay");
-    }
-
-    var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
-
-    // Look for public waiting games with available seats
-    var candidateGames = [];
     try {
-        candidateGames = $app.findRecordsByFilter("games", "is_public = true && status = 'waiting'", "-created", 20, 0);
-    } catch (e) {}
+        var domain = require(__hooks + "/domain.js");
+        var gameService = require(__hooks + "/game_service.js");
+        var auth = c.auth;
+        if (!auth) {
+            return c.unauthorizedError("Authentication required for quickplay");
+        }
 
-    for (var i = 0; i < candidateGames.length; i++) {
-        var g = candidateGames[i];
-        var seats = cards.getRecordJSON(g, "seats", []);
+        var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
 
-        // Check if user is already in this game
-        var alreadyIn = false;
-        var openSeat = -1;
-        for (var s = 0; s < 4; s++) {
-            if (seats[s] && seats[s].user_id === auth.id) {
-                alreadyIn = true;
-                openSeat = s;
-                break;
+        // 1. Find public waiting games
+        var openGames = [];
+        try {
+            openGames = $app.findRecordsByFilter("games", "is_public = true && status = 'waiting'", "-created", 10, 0);
+        } catch (e) {}
+
+        for (var i = 0; i < openGames.length; i++) {
+            var g = openGames[i];
+            var seats = domain.parseJSON(g.get("seats"), []);
+
+            // Check if user is already in this game
+            for (var s = 0; s < 4; s++) {
+                if (seats[s] && seats[s].user_id === auth.id) {
+                    return c.json(200, {
+                        game: g,
+                        seat_index: s
+                    });
+                }
             }
-            if (!seats[s] || !seats[s].user_id) {
-                if (openSeat === -1) openSeat = s;
+
+            // Find empty slot
+            for (var s2 = 0; s2 < 4; s2++) {
+                if (!seats[s2] || (!seats[s2].user_id && !seats[s2].is_bot)) {
+                    seats[s2] = {
+                        user_id: auth.id,
+                        name: displayName,
+                        is_bot: false,
+                        connected: true
+                    };
+                    g.set("seats", seats);
+                    $app.save(g);
+
+                    // If room is now full (4 humans), start immediately
+                    var humanCount = 0;
+                    for (var h = 0; h < 4; h++) {
+                        if (seats[h] && seats[h].user_id && !seats[h].is_bot) {
+                            humanCount++;
+                        }
+                    }
+
+                    if (humanCount === 4) {
+                        gameService.dealAndStartGame(g);
+                    }
+
+                    return c.json(200, {
+                        game: g,
+                        seat_index: s2
+                    });
+                }
             }
         }
 
-        if (alreadyIn) {
-            return c.json(200, {
-                game: g,
-                seat_index: openSeat
-            });
-        }
+        // 2. No open game found: create new public waiting room
+        var roomCode = domain.RoomCode.generate().value;
+        var seat0 = {
+            user_id: auth.id,
+            name: displayName,
+            is_bot: false,
+            connected: true
+        };
 
-        if (openSeat !== -1) {
-            seats[openSeat] = {
-                user_id: auth.id,
-                name: displayName,
-                is_bot: false,
-                connected: true
-            };
-            g.set("seats", seats);
+        var gamesColl = $app.findCollectionByNameOrId("games");
+        var newGame = new Record(gamesColl, {
+            status: "waiting",
+            room_code: roomCode,
+            is_public: true,
+            seats: [seat0, null, null, null],
+            turn_index: 0,
+            leader_index: 0,
+            last_combo: null,
+            pass_count: 0,
+            counts: [13, 13, 13, 13],
+            winner_ranks: [],
+            turn_started_at: new Date().toISOString()
+        });
 
-            // If this was the 4th player, auto-start
-            var totalSeated = 0;
-            for (var m = 0; m < 4; m++) {
-                if (seats[m] && seats[m].user_id) totalSeated++;
-            }
+        $app.save(newGame);
 
-            if (totalSeated === 4) {
-                cards.dealAndStartGame(g);
-            } else {
-                $app.save(g);
-            }
-
-            return c.json(200, {
-                game: g,
-                seat_index: openSeat
-            });
-        }
+        return c.json(200, {
+            game: newGame,
+            seat_index: 0
+        });
+    } catch (err) {
+        console.error("QUICKPLAY_ERR:", err);
+        return c.badRequestError(err.message || String(err));
     }
-
-    // No available room found, create a new public room
-    var roomCode = cards.generateRoomCode();
-    var seat0 = {
-        user_id: auth.id,
-        name: displayName,
-        is_bot: false,
-        connected: true
-    };
-
-    var gamesColl = $app.findCollectionByNameOrId("games");
-    var newGame = new Record(gamesColl, {
-        status: "waiting",
-        room_code: roomCode,
-        is_public: true,
-        seats: [seat0, null, null, null],
-        turn_index: 0,
-        leader_index: 0,
-        last_combo: null,
-        pass_count: 0,
-        counts: [13, 13, 13, 13],
-        winner_ranks: [],
-        turn_started_at: ""
-    });
-
-    $app.save(newGame);
-
-    return c.json(200, {
-        game: newGame,
-        seat_index: 0
-    });
 }, $apis.requireAuth());
 
 /**
  * POST /api/tjapza/rematch
- * Creates a new game record with the same room participants after a game finishes.
+ * Initiates a rematch for all players in the completed room.
  */
 routerAdd("POST", "/api/tjapza/rematch", (c) => {
-    var cards = require(__hooks + "/cards.js");
-    var auth = c.auth;
-    if (!auth) {
-        return c.unauthorizedError("Authentication required for rematch");
-    }
-
-    var reqInfo = c.requestInfo();
-    var body = reqInfo.body || {};
-    var gameId = body.game_id ? String(body.game_id).trim() : "";
-
-    if (!gameId) {
-        return c.badRequestError("game_id is required");
-    }
-
-    var oldGame = null;
     try {
-        oldGame = $app.findRecordById("games", gameId);
-    } catch (e) {
-        return c.notFoundError("Original game not found");
-    }
-
-    if (oldGame.getString("status") !== "finished") {
-        return c.badRequestError("Game is not finished yet");
-    }
-
-    var oldSeats = cards.getRecordJSON(oldGame, "seats", []);
-    var isParticipant = false;
-    for (var i = 0; i < 4; i++) {
-        if (oldSeats[i] && oldSeats[i].user_id === auth.id) {
-            isParticipant = true;
-            break;
+        var domain = require(__hooks + "/domain.js");
+        var gameService = require(__hooks + "/game_service.js");
+        var auth = c.auth;
+        if (!auth) {
+            return c.unauthorizedError("Authentication required for rematch");
         }
-    }
-    if (!isParticipant) {
-        return c.forbiddenError("You were not a participant in this game");
-    }
 
-    // If a rematch game was already created for this old game, return it
-    var existingRematchId = oldGame.getString("rematch_game_id");
-    if (existingRematchId) {
+        var reqInfo = c.requestInfo();
+        var body = reqInfo.body || {};
+        var oldGameId = body.game_id ? String(body.game_id).trim() : "";
+
+        if (!oldGameId) {
+            return c.badRequestError("game_id is required");
+        }
+
+        var oldGame = null;
         try {
-            var existingGame = $app.findRecordById("games", existingRematchId);
-            return c.json(200, {
-                game: existingGame
-            });
-        } catch (e) {}
-    }
-
-    // Preserve players and create a fresh game record
-    var newSeats = [];
-    for (var j = 0; j < 4; j++) {
-        var s = oldSeats[j];
-        if (s) {
-            newSeats.push({
-                user_id: s.user_id,
-                name: s.name,
-                is_bot: s.is_bot,
-                connected: true
-            });
-        } else {
-            newSeats.push(null);
+            oldGame = $app.findRecordById("games", oldGameId);
+        } catch (e) {
+            return c.notFoundError("Original game not found");
         }
-    }
 
-    var gamesColl = $app.findCollectionByNameOrId("games");
-    var newGame = new Record(gamesColl, {
-        status: "waiting",
-        room_code: oldGame.getString("room_code") || cards.generateRoomCode(),
-        is_public: oldGame.getBool("is_public"),
-        seats: newSeats,
-        turn_index: 0,
-        leader_index: 0,
-        last_combo: null,
-        pass_count: 0,
-        counts: [13, 13, 13, 13],
-        winner_ranks: [],
-        turn_started_at: ""
-    });
+        if (oldGame.getString("status") !== "finished") {
+            return c.badRequestError("Can only rematch finished games");
+        }
 
-    $app.save(newGame);
+        // Idempotency check: if another player already created a rematch game, return it
+        var existingRematchId = oldGame.getString("rematch_game_id");
+        if (existingRematchId) {
+            try {
+                var existingGame = $app.findRecordById("games", existingRematchId);
+                var mySeat = -1;
+                var exSeats = domain.parseJSON(existingGame.get("seats"), []);
+                for (var s = 0; s < 4; s++) {
+                    if (exSeats[s] && exSeats[s].user_id === auth.id) {
+                        mySeat = s;
+                        break;
+                    }
+                }
+                return c.json(200, {
+                    game: existingGame,
+                    seat_index: mySeat >= 0 ? mySeat : 0
+                });
+            } catch (e2) {}
+        }
 
-    // Auto-deal and start if all 4 seats are occupied
-    var totalSeated = 0;
-    for (var n = 0; n < 4; n++) {
-        if (newSeats[n]) totalSeated++;
-    }
-    if (totalSeated === 4) {
-        cards.dealAndStartGame(newGame);
-    }
+        var oldSeats = domain.parseJSON(oldGame.get("seats"), []);
+        var callingSeatIndex = -1;
+        for (var i = 0; i < 4; i++) {
+            if (oldSeats[i] && oldSeats[i].user_id === auth.id) {
+                callingSeatIndex = i;
+                break;
+            }
+        }
 
-    // Link rematch_game_id to oldGame and save so all SSE listeners navigate together
-    try {
+        if (callingSeatIndex === -1) {
+            return c.forbiddenError("You were not a player in the original game");
+        }
+
+        // Retain seats and fill bots if needed
+        var newSeats = [];
+        var botNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta"];
+        for (var j = 0; j < 4; j++) {
+            var sInfo = oldSeats[j];
+            if (sInfo && sInfo.user_id) {
+                newSeats.push({
+                    user_id: sInfo.user_id,
+                    name: sInfo.name,
+                    is_bot: false,
+                    connected: true
+                });
+            } else {
+                newSeats.push({
+                    user_id: null,
+                    name: sInfo ? sInfo.name : (botNames[j] || ("Bot " + (j + 1))),
+                    is_bot: true,
+                    connected: true
+                });
+            }
+        }
+
+        var gamesColl = $app.findCollectionByNameOrId("games");
+        var newGame = new Record(gamesColl, {
+            status: "waiting",
+            room_code: oldGame.getString("room_code") || domain.RoomCode.generate().value,
+            is_public: oldGame.getBool("is_public"),
+            seats: newSeats,
+            turn_index: 0,
+            leader_index: 0,
+            last_combo: null,
+            pass_count: 0,
+            counts: [13, 13, 13, 13],
+            winner_ranks: [],
+            turn_started_at: ""
+        });
+
+        $app.save(newGame);
+
+        // Link rematch_game_id to old game
         oldGame.set("rematch_game_id", newGame.id);
         $app.save(oldGame);
-    } catch (saveErr) {}
 
-    return c.json(200, {
-        game: newGame
-    });
+        // Deal cards and start playing
+        gameService.dealAndStartGame(newGame);
+
+        return c.json(200, {
+            game: newGame,
+            seat_index: callingSeatIndex
+        });
+    } catch (err) {
+        console.error("REMATCH_ERR:", err);
+        return c.badRequestError(err.message || String(err));
+    }
 }, $apis.requireAuth());
 
 // ----------------------------------------------------
@@ -424,12 +438,13 @@ routerAdd("POST", "/api/tjapza/rematch", (c) => {
 
 onRecordCreateRequest((e) => {
     try {
-        var cards = require(__hooks + "/cards.js");
+        var domain = require(__hooks + "/domain.js");
+        var gameService = require(__hooks + "/game_service.js");
         var moveRecord = e.record;
         var gameId = moveRecord.getString("game_id");
         var action = moveRecord.getString("action");
         var seatIndex = moveRecord.getInt("seat_index");
-        var cardsPlayed = cards.getRecordJSON(moveRecord, "cards", []);
+        var cardsPlayed = domain.parseJSON(moveRecord.get("cards"), []);
 
         if (action !== "play" && action !== "pass" && action !== "tick") {
             throw new BadRequestError("Invalid action type: " + action);
@@ -459,33 +474,25 @@ onRecordCreateRequest((e) => {
         }
         var leaderIndex = game.getInt("leader_index");
         var passCount = game.getInt("pass_count");
-        var passedSeats = cards.getRecordJSON(game, "passed_seats", []);
-        var counts = cards.getRecordJSON(game, "counts", [13, 13, 13, 13]);
-        var lastCombo = cards.getRecordJSON(game, "last_combo", null);
-        var winnerRanks = cards.getRecordJSON(game, "winner_ranks", []);
-        var seats = cards.getRecordJSON(game, "seats", []);
+        var passedSeats = domain.parseJSON(game.get("passed_seats"), []);
+        var counts = domain.parseJSON(game.get("counts"), [13, 13, 13, 13]);
+        var lastCombo = domain.parseJSON(game.get("last_combo"), null);
+        var winnerRanks = domain.parseJSON(game.get("winner_ranks"), []);
+        var seats = domain.parseJSON(game.get("seats"), []);
         var currentSeat = seats[currentTurn];
         var turnStartedAt = game.getString("turn_started_at");
-        if (cards.isComboEmpty(lastCombo)) {
+
+        if (lastCombo && (!lastCombo.cards || lastCombo.cards.length === 0)) {
             lastCombo = null;
         }
 
-        // Check if opening move of the game
         var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
 
         // 1. Handle TICK Action (Bot move or turn timer timeout auto-play)
         if (action === "tick") {
             var isBotTurn = currentSeat && currentSeat.is_bot === true;
-            var isTimeout = false;
-
-            if (!isBotTurn && turnStartedAt) {
-                var nowTime = Date.now();
-                var startTime = new Date(turnStartedAt).getTime();
-                var timeoutLimit = cards.TURN_TIMEOUT_MS || 60000;
-                if (nowTime - startTime >= timeoutLimit) { // turn timer expired
-                    isTimeout = true;
-                }
-            }
+            var timer = new domain.TurnTimer(turnStartedAt);
+            var isTimeout = !isBotTurn && timer.isExpired();
 
             if (!isBotTurn && !isTimeout) {
                 throw new BadRequestError("Not a bot turn and human player has not timed out");
@@ -494,24 +501,36 @@ onRecordCreateRequest((e) => {
             // Fetch hand of current turn player
             var currentHandRecord = null;
             try {
-                currentHandRecord = $app.findFirstRecordByFilter("hands", "game_id = {:gameId} && seat_index = {:seat}", {
-                    gameId: gameId,
-                    seat: currentTurn
-                });
-            } catch (hErr) {
+                var botHands = $app.findRecordsByFilter("hands", "game_id = {:gameId}", "", 10, 0, { gameId: gameId });
+                for (var hb = 0; hb < botHands.length; hb++) {
+                    if (botHands[hb].getInt("seat_index") === currentTurn) {
+                        currentHandRecord = botHands[hb];
+                        break;
+                    }
+                }
+            } catch (hErr) {}
+
+            if (!currentHandRecord) {
                 throw new BadRequestError("Hand not found for seat " + currentTurn);
             }
 
-            var botHandCards = cards.getRecordJSON(currentHandRecord, "cards", []);
-            var botDecision = cards.getBotMove(botHandCards, lastCombo, isOpeningMove, counts);
+            var botHandCards = domain.parseJSON(currentHandRecord.get("cards"), []);
+            var botMove = domain.BotEngine.decideMove({
+                hand: new domain.Hand(botHandCards),
+                trick: lastCombo && lastCombo.cards?.length > 0
+                    ? new domain.Trick({ lastCombo: domain.CardCombo.evaluate(lastCombo.cards) })
+                    : domain.Trick.createFresh(currentTurn),
+                isOpeningMove: isOpeningMove,
+                counts: counts
+            });
 
-            action = botDecision.action;
+            action = botMove.action;
             seatIndex = currentTurn;
             moveRecord.set("seat_index", currentTurn);
             moveRecord.set("action", action);
 
             if (action === "play") {
-                cardsPlayed = botDecision.cards;
+                cardsPlayed = botMove.cards.map(function(c) { return c.code; });
                 moveRecord.set("cards", cardsPlayed);
             } else {
                 cardsPlayed = [];
@@ -541,17 +560,22 @@ onRecordCreateRequest((e) => {
 
             // Fetch player hand
             try {
-                playerHandRecord = $app.findFirstRecordByFilter("hands", "game_id = {:gameId} && seat_index = {:seat}", {
-                    gameId: gameId,
-                    seat: seatIndex
-                });
-            } catch (hErr2) {
+                var humanHands = $app.findRecordsByFilter("hands", "game_id = {:gameId}", "", 10, 0, { gameId: gameId });
+                for (var hh = 0; hh < humanHands.length; hh++) {
+                    if (humanHands[hh].getInt("seat_index") === seatIndex) {
+                        playerHandRecord = humanHands[hh];
+                        break;
+                    }
+                }
+            } catch (hErr2) {}
+
+            if (!playerHandRecord) {
                 throw new BadRequestError("Hand record not found");
             }
 
-            playerHandCards = cards.getRecordJSON(playerHandRecord, "cards", []);
+            playerHandCards = domain.parseJSON(playerHandRecord.get("cards"), []);
 
-            // Verify player actually holds the played cards (Array check, valid length, bounds, and uniqueness)
+            // Verify player actually holds the played cards
             if (!Array.isArray(cardsPlayed) || (cardsPlayed.length !== 1 && cardsPlayed.length !== 2 && cardsPlayed.length !== 5)) {
                 throw new BadRequestError("Invalid number of cards played (must be 1, 2, or 5)");
             }
@@ -572,25 +596,28 @@ onRecordCreateRequest((e) => {
             }
 
             // Opening move check: must include 3 of Diamonds (code 0)
-            if (isOpeningMove && cardsPlayed.indexOf(0) === -1) {
+            if (isOpeningMove && cardsPlayed.indexOf(domain.CARD_3D) === -1) {
                 throw new BadRequestError("Opening move must include 3 of Diamonds (3♦)");
             }
 
-            // Evaluate combo
-            playedCombo = cards.evaluateCombo(cardsPlayed);
-            if (!playedCombo || !playedCombo.valid) {
+            // Evaluate combo using Domain
+            playedCombo = domain.CardCombo.evaluate(cardsPlayed);
+            if (!playedCombo) {
                 throw new BadRequestError("Invalid card combination");
             }
 
             // Check if beats last_combo
-            if (lastCombo && !cards.canBeat(playedCombo, lastCombo)) {
-                throw new BadRequestError("Played combination does not beat the current pile");
+            if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
+                var targetCombo = domain.CardCombo.evaluate(lastCombo.cards);
+                if (targetCombo && !playedCombo.canBeat(targetCombo)) {
+                    throw new BadRequestError("Played combination does not beat the current pile");
+                }
             }
 
             // Set combo fields on move record
             moveRecord.set("combo_type", playedCombo.type);
             moveRecord.set("combo_power", playedCombo.power);
-            moveRecord.set("cards", cards.sortCards(cardsPlayed));
+            moveRecord.set("cards", domain.Card.sortCodes(cardsPlayed));
         } else if (action === "pass") {
             // Validation: verify turn
             if (seatIndex !== currentTurn) {
@@ -630,7 +657,7 @@ onRecordCreateRequest((e) => {
             var remainingCards = playerHandCards.filter(function(card) {
                 return cardsPlayed.indexOf(card) === -1;
             });
-            playerHandRecord.set("cards", cards.sortCards(remainingCards));
+            playerHandRecord.set("cards", domain.Card.sortCodes(remainingCards));
             $app.save(playerHandRecord);
 
             // 2. Update counts and last_combo
@@ -639,7 +666,7 @@ onRecordCreateRequest((e) => {
             game.set("last_combo", {
                 type: playedCombo.type,
                 power: playedCombo.power,
-                cards: cards.sortCards(cardsPlayed),
+                cards: domain.Card.sortCodes(cardsPlayed),
                 seat_index: seatIndex
             });
             game.set("pass_count", 0);
@@ -694,9 +721,16 @@ onRecordCreateRequest((e) => {
                 }
             }
 
-            // If game is still active, advance turn to next eligible player clockwise (skipping passed players)
+            // If game is still active, advance turn using Trick domain entity
             if (game.getString("status") === "playing") {
-                var nextTurn = cards.findNextTrickSeat(counts, passedSeats, seatIndex, seatIndex);
+                var domainTrick = new domain.Trick({
+                    lastCombo: playedCombo,
+                    leaderSeatIndex: leaderIndex,
+                    passedSeats: passedSeats,
+                    trickWinnerSeat: seatIndex
+                });
+
+                var nextTurn = domainTrick.findNextSeat(counts, seatIndex);
                 if (nextTurn === -1) {
                     // All other active players have already passed in this trick: trick ends immediately!
                     game.set("last_combo", null);
@@ -706,7 +740,7 @@ onRecordCreateRequest((e) => {
                         game.set("turn_index", seatIndex);
                         game.set("leader_index", seatIndex);
                     } else {
-                        var clockwiseLeader = cards.findNextActiveSeat(counts, seatIndex);
+                        var clockwiseLeader = gameService.findNextActiveSeat(counts, seatIndex);
                         game.set("turn_index", clockwiseLeader);
                         game.set("leader_index", clockwiseLeader);
                     }
@@ -726,7 +760,14 @@ onRecordCreateRequest((e) => {
             game.set("pass_count", newPassCount);
 
             var trickWinnerSeat = lastCombo ? lastCombo.seat_index : seatIndex;
-            var nextActiveTurn = cards.findNextTrickSeat(counts, passedSeats, seatIndex, trickWinnerSeat);
+            var domainTrick2 = new domain.Trick({
+                lastCombo: lastCombo ? domain.CardCombo.evaluate(lastCombo.cards) : null,
+                leaderSeatIndex: leaderIndex,
+                passedSeats: passedSeats,
+                trickWinnerSeat: trickWinnerSeat
+            });
+
+            var nextActiveTurn = domainTrick2.findNextSeat(counts, seatIndex);
 
             // If no other eligible player remains, trick ends!
             if (nextActiveTurn === -1) {
@@ -734,18 +775,15 @@ onRecordCreateRequest((e) => {
                 game.set("passed_seats", []);
                 game.set("pass_count", 0);
 
-                // If trick winner still has cards, they lead
                 if (counts[trickWinnerSeat] > 0) {
                     game.set("turn_index", trickWinnerSeat);
                     game.set("leader_index", trickWinnerSeat);
                 } else {
-                    // Post-shed lead priority: handover to next active player clockwise from winner
-                    var clockwiseLeader2 = cards.findNextActiveSeat(counts, trickWinnerSeat);
+                    var clockwiseLeader2 = gameService.findNextActiveSeat(counts, trickWinnerSeat);
                     game.set("turn_index", clockwiseLeader2);
                     game.set("leader_index", clockwiseLeader2);
                 }
             } else {
-                // Trick continues: advance turn to next eligible active player clockwise
                 game.set("passed_seats", passedSeats);
                 game.set("turn_index", nextActiveTurn);
             }
@@ -764,8 +802,6 @@ onRecordCreateRequest((e) => {
 // ----------------------------------------------------
 // CRON: EPHEMERAL DATA CLEANUP
 // ----------------------------------------------------
-// Runs every 10 minutes to purge temporary moves, hands, and abandoned games,
-// while permanently preserving user profiles and lifetime results/stats.
 cronAdd("tjapzaEphemeralCleanup", "*/10 * * * *", () => {
     try {
         // 1. Purge ephemeral moves older than 15 minutes
@@ -799,4 +835,3 @@ cronAdd("tjapzaEphemeralCleanup", "*/10 * * * *", () => {
         console.error("CRON_CLEANUP_ERROR:", cronErr);
     }
 });
-

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
 import PocketBase from "../web/node_modules/pocketbase";
-import { classifyCombo, getBotMove } from "../web/src/rules/cards";
+import { CardCombo, BotEngine, Hand, Trick } from "../web/src/domain";
 
 const PB_PORT = 8098;
 const PB_URL = `http://127.0.0.1:${PB_PORT}`;
@@ -172,18 +172,25 @@ async function runEdgeCasesSuite() {
         );
         const cards: number[] = handRec.cards || [];
         const isOpening = !game.last_combo && game.counts.every((c: number) => c === 13);
-        const others = game.counts.filter((c: number, idx: number) => idx !== currentTurn && c > 0);
-        const minOther = others.length > 0 ? Math.min(...others) : 13;
+        const trick = game.last_combo?.cards?.length > 0
+          ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
+          : Trick.createFresh(currentTurn);
 
-        const move = getBotMove(cards, game.last_combo?.cards || game.last_combo, isOpening, minOther);
-        if (move && move.length > 0) {
-          const combo = classifyCombo(move);
-          console.log(`[Move ${turnsCount}] 👤 ${isAlice ? "Alice" : "Bob"} PLAY:`, combo?.type, move);
+        const decision = BotEngine.decideMove({
+          hand: new Hand(cards),
+          trick: trick,
+          isOpeningMove: isOpening,
+          counts: game.counts
+        });
+
+        if (decision.action === "play" && decision.cards.length > 0) {
+          const combo = CardCombo.evaluate(decision.cards);
+          console.log(`[Move ${turnsCount}] 👤 ${isAlice ? "Alice" : "Bob"} PLAY:`, combo?.type, decision.cards.map((c) => c.code));
           await client.collection("moves").create({
             game_id: game.id,
             seat_index: currentTurn,
             action: "play",
-            cards: move,
+            cards: decision.cards.map((c) => c.code),
           });
         } else {
           console.log(`[Move ${turnsCount}] 👤 ${isAlice ? "Alice" : "Bob"} PASS`);

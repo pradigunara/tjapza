@@ -1,5 +1,5 @@
 import PocketBase from '../web/node_modules/pocketbase';
-import { getBotMove, classifyCombo } from '../web/src/rules/cards';
+import { CardCombo, BotEngine, Hand, Trick } from '../web/src/domain';
 
 async function runMultiplayerTest() {
   console.log('🎮 Starting 4-Human Simultaneous Multiplayer Test...');
@@ -84,20 +84,28 @@ async function runMultiplayerTest() {
       .getFirstListItem(`game_id="${gameId}" && seat_index=${turn}`);
     const handCards: number[] = handRec.cards;
 
-    const isOpening =
-      game.last_combo === null &&
-      game.counts.every((c: number) => c === 13);
-    const botChoice = getBotMove(handCards, game.last_combo, isOpening);
+    const isOpening = !game.last_combo && game.counts.every((c: number) => c === 13);
+    const trick = game.last_combo?.cards?.length > 0
+      ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
+      : Trick.createFresh(turn);
 
-    if (botChoice && botChoice.length > 0) {
+    const decision = BotEngine.decideMove({
+      hand: new Hand(handCards),
+      trick: trick,
+      isOpeningMove: isOpening,
+      counts: game.counts
+    });
+
+    if (decision.action === 'play' && decision.cards.length > 0) {
+      const cards = decision.cards.map((c) => c.code);
       await currentPb.collection('moves').create({
         game_id: gameId,
         seat_index: turn,
         action: 'play',
-        cards: botChoice,
+        cards: cards,
       });
-      const cType = classifyCombo(botChoice)?.type || 'cards';
-      console.log(`[Move ${moveCount}] 👤 ${currentName} (Seat ${turn}) PLAY: [ ${botChoice.join(', ')} ] (${cType})`);
+      const cType = CardCombo.evaluate(cards)?.type || 'cards';
+      console.log(`[Move ${moveCount}] 👤 ${currentName} (Seat ${turn}) PLAY: [ ${cards.join(', ')} ] (${cType})`);
     } else {
       await currentPb.collection('moves').create({
         game_id: gameId,

@@ -1,6 +1,6 @@
 import { Container } from 'pixi.js';
 import { CardSprite } from './CardSprite';
-import { sortCards } from '../rules/cards';
+import { Card } from '../domain';
 import { sound } from '../audio/sound';
 
 export class HandFan extends Container {
@@ -25,7 +25,7 @@ export class HandFan extends Container {
   }
 
   public setCards(cards: number[]): void {
-    const sorted = sortCards(cards);
+    const sorted = Card.sortCodes(cards);
     this.rawCards = sorted;
 
     // Remove old sprites not in new list

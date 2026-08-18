@@ -10,13 +10,21 @@ import {
   type GameRecord,
   type MoveRecord,
 } from '../net/pb';
+import { GameController } from '../application/GameController';
 import { HandFan } from '../render/HandFan';
 import { SeatView } from '../render/SeatView';
 import { PileView } from '../render/PileView';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 import { escapeHtml } from '../ui/escape';
-import { isValidPlay, sortCards, classifyCombo, getBotMove, TURN_TIMEOUT_MS, PUBLIC_LOBBY_AUTOSTART_MS } from '../rules/cards';
+import {
+  Card,
+  CardCombo,
+  Room,
+  Seat,
+  TurnTimer,
+  PUBLIC_LOBBY_AUTOSTART_MS,
+} from '../domain';
 
 export interface TableSceneCallbacks {
   onGameFinished: (game: GameRecord, localSeatIndex: number) => void;
@@ -28,6 +36,7 @@ export class TableScene {
   private game: GameRecord;
   private localSeatIndex: number;
   private callbacks: TableSceneCallbacks;
+  private controller: GameController;
 
   // Pixi Display Containers
   private rootContainer: Container;
@@ -45,7 +54,6 @@ export class TableScene {
   private isProcessingMove = false;
   private heartbeat: GameHeartbeat | null = null;
   private unsubscribeMoves?: () => void;
-  private isOpeningMove = false;
   private lastTurnIndex = -1;
 
   private timerInterval?: number;
@@ -62,6 +70,7 @@ export class TableScene {
     this.game = game;
     this.localSeatIndex = localSeatIndex;
     this.callbacks = callbacks;
+    this.controller = new GameController(game, localSeatIndex, this.handCards);
 
     // 1. Pixi Display Hierarchy
     this.rootContainer = new Container();
@@ -111,6 +120,7 @@ export class TableScene {
     if (this.game.status === 'playing') {
       try {
         this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
+        this.controller.setLocalHand(this.handCards);
         this.handFan.setCards(this.handCards);
         this.updateHudActionState();
         sound.playDeal();
@@ -310,12 +320,21 @@ export class TableScene {
   }
 
   private getHostSeatIndex(seats: any[]): number {
-    for (let i = 0; i < 4; i++) {
-      if (seats[i] && seats[i]?.user_id && !seats[i]?.is_bot) {
-        return i;
-      }
-    }
-    return -1;
+    const room = new Room({
+      code: '',
+      seats: seats?.map((s, idx) =>
+        s
+          ? new Seat({
+              index: idx,
+              userId: s.user_id,
+              name: s.name,
+              isBot: s.is_bot,
+              connected: s.connected,
+            })
+          : null
+      ),
+    });
+    return room.hostSeatIndex;
   }
 
   private async handleGameUpdate(game: GameRecord): Promise<void> {
@@ -324,6 +343,7 @@ export class TableScene {
     const nextHost = this.getHostSeatIndex(game.seats || []);
 
     this.game = game;
+    this.controller.updateGameFromDto(game);
     this.applyGameState();
 
     if (wasWaiting && game.status === 'waiting' && prevHost !== nextHost && nextHost === this.localSeatIndex) {
@@ -332,6 +352,7 @@ export class TableScene {
 
     if (wasWaiting && game.status === 'playing') {
       this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
+      this.controller.setLocalHand(this.handCards);
       this.handFan.setCards(this.handCards);
       this.renderHud();
       sound.playDeal();
@@ -379,14 +400,6 @@ export class TableScene {
     const winnerRanks = this.game.winner_ranks || [];
     const currentTurn = this.game.turn_index;
     const lastCombo = this.game.last_combo;
-
-    // Check if opening move of the game
-    this.isOpeningMove =
-      lastCombo === null &&
-      counts[0] === 13 &&
-      counts[1] === 13 &&
-      counts[2] === 13 &&
-      counts[3] === 13;
 
     // Check if turn changed to local player for turn chime
     if (currentTurn === this.localSeatIndex && this.lastTurnIndex !== this.localSeatIndex) {
@@ -683,7 +696,7 @@ export class TableScene {
     const btnSort = this.hudContainer.querySelector('#btn-action-sort');
     btnSort?.addEventListener('click', () => {
       sound.playClick();
-      this.handCards = sortCards(this.handCards);
+      this.handCards = Card.sortCodes(this.handCards);
       this.handFan.setCards(this.handCards);
       toast.info('Cards sorted');
     });
@@ -701,18 +714,9 @@ export class TableScene {
     // Update Floating Selected Combo Indicator
     if (comboPill) {
       if (this.selectedCards.length > 0) {
-        const classified = classifyCombo(this.selectedCards);
+        const classified = CardCombo.evaluate(this.selectedCards);
         if (classified) {
-          let label = classified.type.replace(/_/g, ' ').toUpperCase();
-          if (classified.type === 'single') label = 'Single';
-          else if (classified.type === 'pair') label = 'Pair';
-          else if (classified.type === 'straight') label = 'Straight';
-          else if (classified.type === 'flush') label = 'Flush';
-          else if (classified.type === 'full_house') label = 'Full House';
-          else if (classified.type === 'quads') label = 'Four of a Kind';
-          else if (classified.type === 'straight_flush') label = 'Straight Flush';
-
-          comboPill.textContent = `✨ ${label} (${this.selectedCards.length} cards)`;
+          comboPill.textContent = `✨ ${classified.description} (${this.selectedCards.length} cards)`;
           comboPill.style.display = 'inline-block';
         } else {
           comboPill.textContent = `${this.selectedCards.length} cards selected`;
@@ -726,15 +730,7 @@ export class TableScene {
     if (!btnPlay || !btnPass) return;
 
     // 1. Play Button Validation
-    let canPlay = false;
-    if (isMyTurn && this.selectedCards.length > 0) {
-      canPlay = isValidPlay(
-        this.handCards,
-        this.selectedCards,
-        this.game.last_combo?.cards || null,
-        this.isOpeningMove
-      );
-    }
+    const canPlay = isMyTurn && this.selectedCards.length > 0 && this.controller.canPlayCards(this.selectedCards).valid;
 
     btnPlay.disabled = !canPlay || this.isProcessingMove;
     if (canPlay) {
@@ -744,12 +740,8 @@ export class TableScene {
     }
 
     // 2. Pass Button Validation
-    const canPass =
-      isMyTurn &&
-      this.game.last_combo !== null &&
-      !this.isOpeningMove &&
-      !this.isProcessingMove;
-    btnPass.disabled = !canPass;
+    const canPass = isMyTurn && this.controller.canPassTurn().valid;
+    btnPass.disabled = !canPass || this.isProcessingMove;
 
     // 3. Hint Button
     if (btnHint) {
@@ -781,12 +773,10 @@ export class TableScene {
 
     if (this.game.status !== 'playing' || !this.game.turn_started_at) return;
 
-    const startTime = new Date(this.game.turn_started_at).getTime();
-    const elapsed = Math.max(0, Date.now() - startTime);
-    const totalDuration = TURN_TIMEOUT_MS;
-    const remainingMs = Math.max(0, totalDuration - elapsed);
-    const secondsLeft = Math.ceil(remainingMs / 1000);
-    const pct = Math.min(100, Math.max(0, (remainingMs / totalDuration) * 100));
+    const timer = new TurnTimer(this.game.turn_started_at);
+    const secondsLeft = timer.getRemainingSecs();
+    const pct = Math.min(100, Math.max(0, (1.0 - timer.getProgress()) * 100));
+    const statusColor = timer.getStatusColor();
 
     const textEl = this.hudContainer.querySelector('#turn-timer-text');
     const barEl = this.hudContainer.querySelector('#turn-timer-bar') as HTMLElement;
@@ -796,46 +786,16 @@ export class TableScene {
     }
     if (barEl) {
       barEl.style.width = `${pct}%`;
-      if (secondsLeft <= 10) {
-        barEl.style.backgroundColor = '#ef4444'; // Red
-      } else if (secondsLeft <= 25) {
-        barEl.style.backgroundColor = '#f59e0b'; // Amber
-      } else {
-        barEl.style.backgroundColor = '#22c55e'; // Green
-      }
+      barEl.style.backgroundColor = statusColor;
     }
   }
 
   private async handlePlayAction(): Promise<void> {
     if (this.isProcessingMove) return;
-    const isMyTurn =
-      this.game.status === 'playing' && this.game.turn_index === this.localSeatIndex;
 
-    if (!isMyTurn) {
-      toast.warning('Not your turn to play');
-      return;
-    }
-
-    if (this.selectedCards.length === 0) {
-      toast.warning('Select cards from your hand to play');
-      return;
-    }
-
-    const valid = isValidPlay(
-      this.handCards,
-      this.selectedCards,
-      this.game.last_combo?.cards || null,
-      this.isOpeningMove
-    );
-
-    if (!valid) {
-      if (this.isOpeningMove) {
-        toast.error('Opening move must contain 3♦ (3 of Diamonds)');
-      } else if (!this.game.last_combo) {
-        toast.error('Invalid combination (must be Single, Pair, Straight, Flush, Full House, Quads, or Straight Flush)');
-      } else {
-        toast.error('Played combination does not beat the current pile');
-      }
+    const check = this.controller.canPlayCards(this.selectedCards);
+    if (!check.valid) {
+      toast.error(check.reason || 'Invalid move');
       return;
     }
 
@@ -850,6 +810,7 @@ export class TableScene {
         try { navigator.vibrate(30); } catch (_) {}
       }
       this.handCards = this.handCards.filter((c) => !played.includes(c));
+      this.controller.setLocalHand(this.handCards);
       this.handFan.setCards(this.handCards);
       this.handFan.clearSelection();
     } catch (err: any) {
@@ -863,21 +824,10 @@ export class TableScene {
 
   private async handlePassAction(): Promise<void> {
     if (this.isProcessingMove) return;
-    const isMyTurn =
-      this.game.status === 'playing' && this.game.turn_index === this.localSeatIndex;
 
-    if (!isMyTurn) {
-      toast.warning('Not your turn');
-      return;
-    }
-
-    if (!this.game.last_combo) {
-      toast.warning('Cannot pass when leading a fresh trick');
-      return;
-    }
-
-    if (this.isOpeningMove) {
-      toast.warning('Cannot pass on the opening move of the game');
+    const check = this.controller.canPassTurn();
+    if (!check.valid) {
+      toast.warning(check.reason || 'Cannot pass');
       return;
     }
 
@@ -899,18 +849,11 @@ export class TableScene {
 
   private handleHintAction(): void {
     sound.playClick();
-    const suggested = getBotMove(
-      this.handCards,
-      this.game.last_combo?.cards || null,
-      this.isOpeningMove,
-      13
-    );
+    const hint = this.controller.findHintCombo(this.selectedCards);
 
-    if (suggested && suggested.length > 0) {
-      this.handFan.setSelectedCards(suggested);
-      const combo = classifyCombo(suggested);
-      const comboName = combo ? combo.type.replace(/_/g, ' ').toUpperCase() : 'COMBO';
-      toast.info(`Hint: Selected ${comboName}`);
+    if (hint && hint.cards.length > 0) {
+      this.handFan.setSelectedCards(hint.cardCodes);
+      toast.info(`Hint: Selected ${hint.description}`);
     } else {
       toast.info('Hint: No beating move available — pass recommended');
     }

@@ -1,5 +1,5 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
-import { getRank, getSuit, RANK_NAMES, SUIT_SYMBOLS } from '../rules/cards';
+import { Card } from '../domain';
 
 export const CARD_WIDTH = 76;
 export const CARD_HEIGHT = 108;
@@ -158,10 +158,8 @@ export class CardSprite extends Container {
   }
 
   private buildFront(): void {
-    const rank = getRank(this.cardCode);
-    const suit = getSuit(this.cardCode);
-    const isRed = suit === 0 || suit === 2; // Diamonds or Hearts
-    const textColor = isRed ? '#dc2626' : '#0f172a';
+    const card = new Card(this.cardCode);
+    const textColor = card.isRed ? '#dc2626' : '#0f172a';
 
     const rankStyle = new TextStyle({
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -178,21 +176,21 @@ export class CardSprite extends Container {
     });
 
     // Top-Left corner
-    this.topLeftRankText = new Text({ text: RANK_NAMES[rank], style: rankStyle });
+    this.topLeftRankText = new Text({ text: card.rankName, style: rankStyle });
     this.topLeftRankText.position.set(6, 4);
     this.frontContainer.addChild(this.topLeftRankText);
 
-    this.topLeftSuitText = new Text({ text: SUIT_SYMBOLS[suit], style: suitStyle });
+    this.topLeftSuitText = new Text({ text: card.suitSymbol, style: suitStyle });
     this.topLeftSuitText.position.set(6, 22);
     this.frontContainer.addChild(this.topLeftSuitText);
 
     // Bottom-Right corner (rotated 180°)
-    this.bottomRightRankText = new Text({ text: RANK_NAMES[rank], style: rankStyle });
+    this.bottomRightRankText = new Text({ text: card.rankName, style: rankStyle });
     this.bottomRightRankText.rotation = Math.PI;
     this.bottomRightRankText.position.set(CARD_WIDTH - 6, CARD_HEIGHT - 4);
     this.frontContainer.addChild(this.bottomRightRankText);
 
-    this.bottomRightSuitText = new Text({ text: SUIT_SYMBOLS[suit], style: suitStyle });
+    this.bottomRightSuitText = new Text({ text: card.suitSymbol, style: suitStyle });
     this.bottomRightSuitText.rotation = Math.PI;
     this.bottomRightSuitText.position.set(CARD_WIDTH - 6, CARD_HEIGHT - 22);
     this.frontContainer.addChild(this.bottomRightSuitText);
@@ -202,15 +200,15 @@ export class CardSprite extends Container {
     this.centerArtContainer.position.set(CARD_WIDTH / 2, CARD_HEIGHT / 2);
     this.frontContainer.addChild(this.centerArtContainer);
 
-    this.drawCenterArt(rank, suit, textColor);
+    this.drawCenterArt(card, textColor);
   }
 
-  private drawCenterArt(rank: number, suit: number, textColor: string): void {
+  private drawCenterArt(card: Card, textColor: string): void {
     // Remove old children in center
     this.centerArtContainer.removeChildren();
 
-    const isFaceCard = rank === 8 || rank === 9 || rank === 10; // J=8, Q=9, K=10
-    const isBigTwo = rank === 12; // Rank 2 (Supreme card!)
+    const isFaceCard = card.rank === 8 || card.rank === 9 || card.rank === 10; // J=8, Q=9, K=10
+    const isBigTwo = card.rank === 12; // Rank 2 (Supreme card!)
 
     if (isFaceCard) {
       // Regal Court Card Artwork
@@ -226,7 +224,7 @@ export class CardSprite extends Container {
       const crownStyle = new TextStyle({
         fontSize: 22,
       });
-      const crownIcon = rank === 10 ? '👑' : rank === 9 ? '👸' : '⚔️';
+      const crownIcon = card.rank === 10 ? '👑' : card.rank === 9 ? '👸' : '⚔️';
       const crownText = new Text({ text: crownIcon, style: crownStyle });
       crownText.anchor.set(0.5, 0.5);
       crownText.position.set(0, -6);
@@ -237,7 +235,7 @@ export class CardSprite extends Container {
         fontWeight: 'bold',
         fill: textColor,
       });
-      const subSuit = new Text({ text: SUIT_SYMBOLS[suit], style: suitStyle });
+      const subSuit = new Text({ text: card.suitSymbol, style: suitStyle });
       subSuit.anchor.set(0.5, 0.5);
       subSuit.position.set(0, 16);
 
@@ -259,49 +257,45 @@ export class CardSprite extends Container {
         fontWeight: 'bold',
         fill: textColor,
       });
-      const suitText = new Text({ text: SUIT_SYMBOLS[suit], style: suitStyle });
-      suitText.anchor.set(0.5, 0.5);
-      suitText.position.set(0, 4);
+      const centerSuit = new Text({ text: card.suitSymbol, style: suitStyle });
+      centerSuit.anchor.set(0.5, 0.5);
+      centerSuit.position.set(0, 6);
 
       this.centerArtContainer.addChild(star);
-      this.centerArtContainer.addChild(suitText);
+      this.centerArtContainer.addChild(centerSuit);
     } else {
-      // Number Cards: Crisp bold center suit glyph
-      const centerSuitStyle = new TextStyle({
-        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        fontSize: 34,
+      // Standard Number Cards
+      const suitStyle = new TextStyle({
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: 32,
         fontWeight: 'bold',
         fill: textColor,
       });
-      const centerSuitText = new Text({ text: SUIT_SYMBOLS[suit], style: centerSuitStyle });
-      centerSuitText.anchor.set(0.5, 0.5);
-      centerSuitText.position.set(0, 0);
-      this.centerArtContainer.addChild(centerSuitText);
+      const centerSuit = new Text({ text: card.suitSymbol, style: suitStyle });
+      centerSuit.anchor.set(0.5, 0.5);
+      centerSuit.position.set(0, 0);
+
+      this.centerArtContainer.addChild(centerSuit);
     }
   }
 
   private updateFrontContent(): void {
-    const rank = getRank(this.cardCode);
-    const suit = getSuit(this.cardCode);
-    const isRed = suit === 0 || suit === 2;
-    const textColor = isRed ? '#dc2626' : '#0f172a';
+    const card = new Card(this.cardCode);
+    const textColor = card.isRed ? '#dc2626' : '#0f172a';
 
-    const rankName = RANK_NAMES[rank];
-    const suitSym = SUIT_SYMBOLS[suit];
-
-    this.topLeftRankText.text = rankName;
+    this.topLeftRankText.text = card.rankName;
     this.topLeftRankText.style.fill = textColor;
 
-    this.topLeftSuitText.text = suitSym;
+    this.topLeftSuitText.text = card.suitSymbol;
     this.topLeftSuitText.style.fill = textColor;
 
-    this.bottomRightRankText.text = rankName;
+    this.bottomRightRankText.text = card.rankName;
     this.bottomRightRankText.style.fill = textColor;
 
-    this.bottomRightSuitText.text = suitSym;
+    this.bottomRightSuitText.text = card.suitSymbol;
     this.bottomRightSuitText.style.fill = textColor;
 
-    this.drawCenterArt(rank, suit, textColor);
+    this.drawCenterArt(card, textColor);
   }
 
   private buildBack(): void {

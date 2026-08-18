@@ -2,7 +2,7 @@ import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { CardSprite } from './CardSprite';
 import type { LastCombo } from '../net/pb';
 import { sound } from '../audio/sound';
-import { classifyCombo } from '../rules/cards';
+import { CardCombo } from '../domain';
 
 export class PileView extends Container {
   private cardContainer: Container;
@@ -111,17 +111,10 @@ export class PileView extends Container {
     }
 
     // Format Combo Description Banner
-    const classified = classifyCombo(cards);
-    let comboName = combo.type ? combo.type.replace(/_/g, ' ').toUpperCase() : 'PLAY';
-    if (classified) {
-      if (classified.type === 'single') comboName = 'SINGLE';
-      else if (classified.type === 'pair') comboName = 'PAIR';
-      else if (classified.type === 'straight') comboName = 'STRAIGHT';
-      else if (classified.type === 'flush') comboName = 'FLUSH';
-      else if (classified.type === 'full_house') comboName = 'FULL HOUSE';
-      else if (classified.type === 'quads') comboName = 'FOUR OF A KIND';
-      else if (classified.type === 'straight_flush') comboName = 'STRAIGHT FLUSH';
-    }
+    const classified = CardCombo.evaluate(cards);
+    const comboName = classified
+      ? classified.type.replace(/_/g, ' ').toUpperCase()
+      : combo.type ? combo.type.replace(/_/g, ' ').toUpperCase() : 'PLAY';
 
     this.bannerTitle.text = comboName;
     this.bannerSubtitle.text = playerName ? `Played by ${playerName}` : '';

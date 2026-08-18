@@ -1,4 +1,5 @@
 import PocketBase from '../web/node_modules/pocketbase';
+import { CardCombo, BotEngine, Hand, Trick } from '../web/src/domain';
 import { spawn } from 'child_process';
 import { resolve } from 'path';
 
@@ -99,36 +100,42 @@ async function runDataCleanupTests() {
       const currentTurn = game.turn_index;
       const seats = game.seats;
       const isBot = seats[currentTurn]?.is_bot;
+      const hasCards = (game.counts && game.counts[currentTurn] > 0);
 
-      if (isBot) {
-        // Send tick for bot
-        await p1.pb.send('/api/collections/moves/records', {
-          method: 'POST',
-          body: {
-            game_id: gameId,
-            seat_index: currentTurn,
-            action: 'tick',
-            cards: [],
-          },
+      if (isBot || !hasCards) {
+        // Send tick for bot or shed player
+        await p1.pb.collection('moves').create({
+          game_id: gameId,
+          seat_index: currentTurn,
+          action: 'tick',
+          cards: [],
         });
       } else {
-        // Human turn: play lowest card or pass
+        // Human turn
         let handRec: any = null;
         try {
           handRec = await p1.pb.collection('hands').getFirstListItem(`game_id = "${gameId}" && seat_index = ${currentTurn}`);
         } catch (_) {}
 
         if (handRec && handRec.cards && handRec.cards.length > 0) {
-          const cardToPlay = handRec.cards[0];
-          try {
+          const isOpeningTrick = !game.last_combo && game.counts.every((c: number) => c === 13);
+          const move = BotEngine.decideMove({
+            hand: new Hand(handRec.cards),
+            trick: game.last_combo && game.last_combo.cards?.length > 0
+              ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
+              : Trick.createFresh(currentTurn),
+            isOpeningMove: isOpeningTrick,
+            counts: game.counts,
+          });
+
+          if (move.action === 'play' && move.cards.length > 0) {
             await p1.pb.collection('moves').create({
               game_id: gameId,
               seat_index: currentTurn,
               action: 'play',
-              cards: [cardToPlay],
+              cards: move.cards.map((c) => c.code),
             });
-          } catch {
-            // Pass if card cannot beat
+          } else {
             await p1.pb.collection('moves').create({
               game_id: gameId,
               seat_index: currentTurn,
@@ -137,11 +144,10 @@ async function runDataCleanupTests() {
             });
           }
         } else {
-          // Pass fallback
           await p1.pb.collection('moves').create({
             game_id: gameId,
             seat_index: currentTurn,
-            action: 'pass',
+            action: 'tick',
             cards: [],
           });
         }
