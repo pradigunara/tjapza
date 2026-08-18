@@ -1,0 +1,10 @@
+.git
+.gitignore
+pb/pb_data
+pb/test_pb_data
+pb/test_pb_edge_data
+pb/pocketbase
+web/node_modules
+web/dist
+scripts
+*.log
