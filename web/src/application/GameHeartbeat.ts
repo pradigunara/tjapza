@@ -123,21 +123,25 @@ export class GameHeartbeat {
 
       this.isTicking = true;
       this.hasPendingNextTick = false;
+      let tickSuccess = false;
 
       try {
         await sendTick(this.gameId, currentTurn);
+        tickSuccess = true;
       } catch (err: any) {
         if (err?.status !== 400) {
           console.debug('Heartbeat tick notice:', err?.message || err);
         }
       } finally {
         this.isTicking = false;
-        if (isPrimary) {
-          const delay = isBotOnlyRemaining ? 200 : 350;
-          this.triggerImmediate(delay);
-        } else if (this.hasPendingNextTick) {
-          this.hasPendingNextTick = false;
-          this.triggerImmediate(300);
+        if (tickSuccess) {
+          if (isPrimary) {
+            const delay = isBotOnlyRemaining ? 200 : 350;
+            this.triggerImmediate(delay);
+          } else if (this.hasPendingNextTick) {
+            this.hasPendingNextTick = false;
+            this.triggerImmediate(300);
+          }
         }
       }
     }

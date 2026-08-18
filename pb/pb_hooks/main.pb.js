@@ -486,6 +486,18 @@ onRecordCreateRequest((e) => {
             lastCombo = null;
         }
 
+        // Defensive guard: If currentTurn player already has 0 cards, auto-advance turn immediately
+        if (counts[currentTurn] === 0) {
+            var autoNext = gameService.findNextActiveSeat(counts, currentTurn);
+            game.set("turn_index", autoNext);
+            if (!lastCombo) {
+                game.set("leader_index", autoNext);
+            }
+            game.set("turn_started_at", new Date().toISOString());
+            $app.save(game);
+            throw new BadRequestError("Seat " + currentTurn + " has finished; advanced turn to seat " + autoNext);
+        }
+
         var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
 
         // 1. Handle TICK Action (Bot move or turn timer timeout auto-play)
@@ -526,11 +538,25 @@ onRecordCreateRequest((e) => {
 
             action = botMove.action;
             seatIndex = currentTurn;
+
+            // Prevent bot from ever attempting to pass when leading or opening
+            if (action === "pass" && (!lastCombo || isOpeningMove)) {
+                if (botHandCards.length > 0) {
+                    action = "play";
+                    var forcedCard = isOpeningMove && botHandCards.indexOf(domain.CARD_3D) !== -1
+                        ? domain.CARD_3D
+                        : botHandCards[0];
+                    cardsPlayed = [forcedCard];
+                }
+            }
+
             moveRecord.set("seat_index", currentTurn);
             moveRecord.set("action", action);
 
             if (action === "play") {
-                cardsPlayed = botMove.cards.map(function(c) { return c.code; });
+                if (!cardsPlayed || cardsPlayed.length === 0) {
+                    cardsPlayed = botMove.cards.map(function(c) { return c.code; });
+                }
                 moveRecord.set("cards", cardsPlayed);
             } else {
                 cardsPlayed = [];
