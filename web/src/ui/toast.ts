@@ -2,6 +2,8 @@
  * HUD Notification Toast System
  */
 
+import { escapeHtml } from './escape';
+
 export type ToastType = 'info' | 'success' | 'warning' | 'error';
 
 interface ToastItem {
@@ -59,7 +61,7 @@ class ToastManager {
 
     toastEl.innerHTML = `
       <span class="tjapza-toast-icon">${iconSvg}</span>
-      <span class="tjapza-toast-msg">${message}</span>
+      <span class="tjapza-toast-msg">${escapeHtml(message)}</span>
     `;
 
     container.appendChild(toastEl);

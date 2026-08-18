@@ -417,6 +417,14 @@ onRecordCreateRequest((e) => {
         var seatIndex = moveRecord.getInt("seat_index");
         var cardsPlayed = cards.getRecordJSON(moveRecord, "cards", []);
 
+        if (action !== "play" && action !== "pass" && action !== "tick") {
+            throw new BadRequestError("Invalid action type: " + action);
+        }
+
+        if (typeof seatIndex !== "number" || seatIndex < 0 || seatIndex > 3) {
+            throw new BadRequestError("Invalid seat_index: " + seatIndex);
+        }
+
         var game = null;
         try {
             game = $app.findRecordById("games", gameId);
@@ -489,6 +497,8 @@ onRecordCreateRequest((e) => {
             }
         }
 
+        var isTimeoutTick = (moveRecord.getString("action") === "tick" && isTimeout);
+
         // 2. Handle PLAY Action
         var playedCombo = null;
         var playerHandRecord = null;
@@ -500,8 +510,8 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError("Not your turn to play");
             }
 
-            // If human, verify authentication matches seat
-            if (e.auth && currentSeat && !currentSeat.is_bot) {
+            // If direct human action (not a timeout tick), verify authentication matches seat
+            if (!isTimeoutTick && e.auth && currentSeat && !currentSeat.is_bot) {
                 if (currentSeat.user_id !== e.auth.id) {
                     throw new ForbiddenError("You are not authorized to play for this seat");
                 }
@@ -519,14 +529,23 @@ onRecordCreateRequest((e) => {
 
             playerHandCards = cards.getRecordJSON(playerHandRecord, "cards", []);
 
-            // Verify player actually holds the played cards
-            if (!cardsPlayed || cardsPlayed.length === 0) {
-                throw new BadRequestError("No cards played");
+            // Verify player actually holds the played cards (Array check, valid length, bounds, and uniqueness)
+            if (!Array.isArray(cardsPlayed) || (cardsPlayed.length !== 1 && cardsPlayed.length !== 2 && cardsPlayed.length !== 5)) {
+                throw new BadRequestError("Invalid number of cards played (must be 1, 2, or 5)");
             }
 
+            var seenCards = {};
             for (var c = 0; c < cardsPlayed.length; c++) {
-                if (playerHandCards.indexOf(cardsPlayed[c]) === -1) {
-                    throw new BadRequestError("Card not in hand: " + cardsPlayed[c]);
+                var cardNum = cardsPlayed[c];
+                if (typeof cardNum !== "number" || cardNum < 0 || cardNum > 51 || Math.floor(cardNum) !== cardNum) {
+                    throw new BadRequestError("Invalid card code: " + cardNum);
+                }
+                if (seenCards[cardNum]) {
+                    throw new BadRequestError("Duplicate card submitted in combo: " + cardNum);
+                }
+                seenCards[cardNum] = true;
+                if (playerHandCards.indexOf(cardNum) === -1) {
+                    throw new BadRequestError("Card not in hand: " + cardNum);
                 }
             }
 
@@ -556,8 +575,8 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError("Not your turn to pass");
             }
 
-            // If human, verify auth
-            if (e.auth && currentSeat && !currentSeat.is_bot) {
+            // If direct human action, verify auth
+            if (!isTimeoutTick && e.auth && currentSeat && !currentSeat.is_bot) {
                 if (currentSeat.user_id !== e.auth.id) {
                     throw new ForbiddenError("You are not authorized to pass for this seat");
                 }

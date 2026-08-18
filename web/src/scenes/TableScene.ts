@@ -15,6 +15,7 @@ import { SeatView } from '../render/SeatView';
 import { PileView } from '../render/PileView';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
+import { escapeHtml } from '../ui/escape';
 import { isValidPlay, sortCards, classifyCombo, getBotMove } from '../rules/cards';
 
 export interface TableSceneCallbacks {
@@ -494,7 +495,7 @@ export class TableScene {
         <div class="table-waiting-overlay">
           <div class="waiting-card">
             <h2 class="waiting-title">Game Lobby</h2>
-            <p class="waiting-subtitle">Room Code: <strong class="text-gold">${this.game.room_code}</strong></p>
+            <p class="waiting-subtitle">Room Code: <strong class="text-gold">${escapeHtml(this.game.room_code)}</strong></p>
 
             <div class="waiting-seats-grid">
               ${[0, 1, 2, 3]
@@ -508,8 +509,8 @@ export class TableScene {
                       Seat ${idx + 1}
                       ${isSeatHost ? '<span class="host-badge" title="Room Host">👑 Host</span>' : ''}
                     </div>
-                    <div class="waiting-seat-avatar">${occupied ? s.name.charAt(0).toUpperCase() : '👤'}</div>
-                    <div class="waiting-seat-name">${occupied ? s.name : 'Waiting…'}</div>
+                    <div class="waiting-seat-avatar">${occupied ? escapeHtml(s.name.charAt(0).toUpperCase()) : '👤'}</div>
+                    <div class="waiting-seat-name">${occupied ? escapeHtml(s.name) : 'Waiting…'}</div>
                   </div>
                 `;
                 })
@@ -521,7 +522,7 @@ export class TableScene {
               ${
                 isHost
                   ? `<button id="btn-start-game" class="btn-primary btn-gold btn-lg">Start Game (Fill Bots)</button>`
-                  : `<div class="waiting-host-notice">⏳ Waiting for host (<strong>${hostName}</strong>) to start…</div>`
+                  : `<div class="waiting-host-notice">⏳ Waiting for host (<strong>${escapeHtml(hostName)}</strong>) to start…</div>`
               }
             </div>
           </div>

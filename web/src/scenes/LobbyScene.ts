@@ -14,6 +14,7 @@ import {
 } from '../net/pb';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
+import { escapeHtml } from '../ui/escape';
 
 export interface LobbyCallbacks {
   onGameJoined: (game: GameRecord, localSeatIndex: number) => void;
@@ -82,10 +83,10 @@ export class LobbyScene {
 
             <!-- Profile Badge -->
             <div class="profile-badge" id="profile-badge">
-              <div class="profile-avatar">${displayName.charAt(0).toUpperCase()}</div>
+              <div class="profile-avatar">${escapeHtml(displayName.charAt(0).toUpperCase())}</div>
               <div class="profile-info">
                 <div class="profile-name-row">
-                  <span class="profile-name" id="profile-display-name">${displayName}</span>
+                  <span class="profile-name" id="profile-display-name">${escapeHtml(displayName)}</span>
                   <button id="btn-edit-name" class="btn-micro" title="Edit Name">✎</button>
                 </div>
                 <span class="profile-type">${isGuest ? 'Guest Account' : 'Online User'}</span>

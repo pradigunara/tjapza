@@ -2,6 +2,7 @@ import type { GameRecord, ResultRecord } from '../net/pb';
 import { rematch, fetchResults, joinRoom, pb } from '../net/pb';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
+import { escapeHtml } from '../ui/escape';
 
 export interface ResultsCallbacks {
   onRematchStarted: (newGame: GameRecord, localSeatIndex: number) => void;
@@ -166,9 +167,9 @@ export class ResultsScene {
               return `
                 <div class="score-row ${p.isLocal ? 'score-row-local' : ''} rank-${p.rank}">
                   <div class="score-rank-badge">${medal}</div>
-                  <div class="score-avatar">${p.isBot ? '🤖' : p.name.charAt(0).toUpperCase()}</div>
+                  <div class="score-avatar">${p.isBot ? '🤖' : escapeHtml(p.name.charAt(0).toUpperCase())}</div>
                   <div class="score-name-col">
-                    <span class="score-name">${p.name} ${p.isLocal ? '(You)' : ''}</span>
+                    <span class="score-name">${escapeHtml(p.name)} ${p.isLocal ? '(You)' : ''}</span>
                     <span class="score-role">${p.isBot ? 'Bot' : 'Player'}</span>
                   </div>
                   <div class="score-place-label">${p.rank}${this.getOrdinal(p.rank)} Place</div>

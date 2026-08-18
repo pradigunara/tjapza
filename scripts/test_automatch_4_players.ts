@@ -3,12 +3,14 @@ import { spawn } from "child_process";
 
 const PB_URL = "http://127.0.0.1:8096";
 
+const testDbDir = `./pb/test_pb_automatch_${Date.now()}`;
+
 async function runAutomatchTest() {
   console.log("🚀 Starting Full 4-Player Automatch (Quickplay) Test...\n");
 
   const server = spawn(
     "./pb/pocketbase",
-    ["serve", "--http=127.0.0.1:8096", "--dir=./pb/test_pb_automatch_data"],
+    ["serve", "--http=127.0.0.1:8096", `--dir=${testDbDir}`],
     { stdio: ["ignore", "pipe", "pipe"] }
   );
 
@@ -108,6 +110,9 @@ async function runAutomatchTest() {
     console.log("=======================================================\n");
   } finally {
     server.kill();
+    try {
+      require("fs").rmSync(testDbDir, { recursive: true, force: true });
+    } catch (_) {}
   }
 }
 
