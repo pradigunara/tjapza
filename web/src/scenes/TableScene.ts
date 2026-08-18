@@ -1,6 +1,7 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import {
   GameHeartbeat,
+  fetchGame,
   fetchPlayerHand,
   playCards,
   passTurn,
@@ -48,6 +49,7 @@ export class TableScene {
 
   private timerInterval?: number;
   private tickerCallback?: (ticker: any) => void;
+  private visibilityHandler?: () => void;
 
   constructor(
     app: Application,
@@ -143,9 +145,32 @@ export class TableScene {
       () => this.localSeatIndex
     );
     this.heartbeat.start();
+
+    // Reconcile state immediately when mobile tab becomes visible again
+    this.visibilityHandler = async () => {
+      if (document.visibilityState === 'visible' && this.game?.id) {
+        try {
+          const fresh = await fetchGame(this.game.id);
+          this.handleGameUpdate(fresh);
+          if (fresh.status === 'playing') {
+            const hand = await fetchPlayerHand(this.game.id, this.localSeatIndex);
+            if (JSON.stringify(hand) !== JSON.stringify(this.handCards)) {
+              this.handCards = hand;
+              this.handFan.setCards(hand);
+              this.updateHudActionState();
+            }
+          }
+        } catch (_) {}
+      }
+    };
+    document.addEventListener('visibilitychange', this.visibilityHandler);
   }
 
   public unmount(): void {
+    if (this.visibilityHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = undefined;
+    }
     if (this.heartbeat) {
       this.heartbeat.stop();
       this.heartbeat = null;
@@ -283,10 +308,26 @@ export class TableScene {
     }
   }
 
+  private getHostSeatIndex(seats: any[]): number {
+    for (let i = 0; i < 4; i++) {
+      if (seats[i] && seats[i]?.user_id && !seats[i]?.is_bot) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   private async handleGameUpdate(game: GameRecord): Promise<void> {
     const wasWaiting = this.game.status === 'waiting';
+    const prevHost = this.getHostSeatIndex(this.game.seats || []);
+    const nextHost = this.getHostSeatIndex(game.seats || []);
+
     this.game = game;
     this.applyGameState();
+
+    if (wasWaiting && game.status === 'waiting' && prevHost !== nextHost && nextHost === this.localSeatIndex) {
+      toast.info('You are now the room host 👑');
+    }
 
     if (wasWaiting && game.status === 'playing') {
       this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
