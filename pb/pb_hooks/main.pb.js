@@ -523,6 +523,17 @@ onRecordCreateRequest((e) => {
             } catch (hErr) {}
 
             if (!currentHandRecord) {
+                // If hand is missing, check if player or game has finished
+                var nextActive = gameService.findNextActiveSeat(counts, currentTurn);
+                if (nextActive !== currentTurn && counts[currentTurn] === 0) {
+                    game.set("turn_index", nextActive);
+                    if (!lastCombo) {
+                        game.set("leader_index", nextActive);
+                    }
+                    game.set("turn_started_at", new Date().toISOString());
+                    $app.save(game);
+                    return e.next();
+                }
                 throw new BadRequestError("Hand not found for seat " + currentTurn);
             }
 
@@ -820,7 +831,9 @@ onRecordCreateRequest((e) => {
 
         return e.next();
     } catch (err) {
-        console.error("MOVE_HOOK_ERROR:", err);
+        if (!(err instanceof BadRequestError) && !(err instanceof ForbiddenError) && !(err instanceof NotFoundError)) {
+            console.error("MOVE_HOOK_SYSTEM_ERROR:", err);
+        }
         throw err;
     }
 }, "moves");
