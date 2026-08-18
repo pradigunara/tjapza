@@ -23,6 +23,8 @@ function getSessionStorageKey(): string {
 }
 
 export const pb = new PocketBase(PB_URL, new LocalAuthStore(getSessionStorageKey()));
+// Disable auto-cancellation so concurrent game ticks, hand fetches, and moves don't cancel each other
+pb.autoCancellation(false);
 
 // -----------------------------------------------------------------------------
 // Type Definitions

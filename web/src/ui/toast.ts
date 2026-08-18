@@ -30,6 +30,13 @@ class ToastManager {
   }
 
   public show(message: string, type: ToastType = 'info', durationMs = 3000): void {
+    if (!message) return;
+    const lower = message.toLowerCase();
+    // Ignore internal SDK request cancellation / aborts
+    if (lower.includes('autocancelled') || lower.includes('request was cancelled') || lower.includes('abort')) {
+      return;
+    }
+
     const container = this.ensureContainer();
     const id = 'toast_' + Math.random().toString(36).substring(2, 9);
     const toast: ToastItem = { id, message, type, durationMs };
