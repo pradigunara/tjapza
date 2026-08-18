@@ -612,9 +612,11 @@ onRecordCreateRequest((e) => {
 
             if (!playerHandRecord) {
                 try {
-                    var humanHands = $app.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 10, 0);
+                    var humanHands = $app.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 50, 0);
                     for (var hh = 0; hh < humanHands.length; hh++) {
-                        if (humanHands[hh].getInt("seat_index") === seatIndex || (e.auth && humanHands[hh].getString("user_id") === e.auth.id)) {
+                        var hSeat = humanHands[hh].getInt("seat_index");
+                        var hUser = humanHands[hh].getString("user_id");
+                        if (hSeat === seatIndex || hSeat === currentTurn || (e.auth && hUser === e.auth.id)) {
                             playerHandRecord = humanHands[hh];
                             break;
                         }
@@ -623,6 +625,7 @@ onRecordCreateRequest((e) => {
             }
 
             if (!playerHandRecord) {
+                console.error("[HAND_NOT_FOUND_DEBUG] gameId: " + gameId + " seatIndex: " + seatIndex + " currentTurn: " + currentTurn + " auth: " + (e.auth ? e.auth.id : "none"));
                 throw new BadRequestError("Hand record not found");
             }
 
