@@ -1,5 +1,5 @@
 import { Container } from 'pixi.js';
-import { CardSprite, CARD_WIDTH, CARD_HEIGHT } from './CardSprite';
+import { CardSprite } from './CardSprite';
 import { sortCards } from '../rules/cards';
 import { sound } from '../audio/sound';
 
@@ -19,14 +19,9 @@ export class HandFan extends Container {
   public onPassRequested?: () => void;
   public onHintRequested?: () => void;
 
-  // Drag select tracking
-  private isPointerDown = false;
-  private dragVisitedCards = new Set<number>();
-
   constructor() {
     super();
     this.setupKeyboardShortcuts();
-    this.setupDragSelection();
   }
 
   public setCards(cards: number[]): void {
@@ -86,10 +81,11 @@ export class HandFan extends Container {
   }
 
   public setSelectedCards(cards: number[]): void {
-    this.selectedCards = new Set(cards);
+    this.selectedCards = new Set(cards.slice(0, 5));
     for (const sprite of this.cardSprites) {
       sprite.setSelected(this.selectedCards.has(sprite.cardCode));
     }
+    this.relayoutCards();
     this.onSelectionChanged?.(this.getSelectedCards());
   }
 
@@ -98,15 +94,24 @@ export class HandFan extends Container {
     for (const sprite of this.cardSprites) {
       sprite.setSelected(false);
     }
+    this.relayoutCards();
     this.onSelectionChanged?.([]);
   }
 
   public toggleCardSelection(cardCode: number): void {
-    sound.playClick();
     if (this.selectedCards.has(cardCode)) {
       this.selectedCards.delete(cardCode);
     } else {
+      // Big Two combo limit: cap selection at 5 cards maximum
+      if (this.selectedCards.size >= 5) {
+        return;
+      }
       this.selectedCards.add(cardCode);
+    }
+
+    sound.playClick();
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate(10); } catch (_) {}
     }
 
     const sprite = this.cardSprites.find((s) => s.cardCode === cardCode);
@@ -114,6 +119,7 @@ export class HandFan extends Container {
       sprite.setSelected(this.selectedCards.has(cardCode));
     }
 
+    this.relayoutCards();
     this.onSelectionChanged?.(this.getSelectedCards());
   }
 
@@ -138,29 +144,108 @@ export class HandFan extends Container {
     const count = this.cardSprites.length;
     if (count === 0) return;
 
-    const isMobile = this.viewWidth < 600;
-    const maxSpread = Math.min(this.viewWidth * (isMobile ? 0.92 : 0.75), count * (isMobile ? 36 : 52));
-    const cardSpacing = count > 1 ? maxSpread / (count - 1) : 0;
-
+    const isPortrait = this.viewHeight > this.viewWidth;
+    const isMobile = this.viewWidth < 640;
     const centerX = this.viewWidth / 2;
-    const baseY = this.viewHeight - (isMobile ? 80 : 110);
-    const startX = centerX - maxSpread / 2;
+    const sideMargin = isPortrait ? 24 : isMobile ? 32 : 56;
 
-    const maxAngle = Math.min(0.24, 0.032 * (count - 1));
-    const angleStep = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
+    // Use 2-tier fan on mobile portrait when holding more than 7 cards
+    const useTwoTier = isPortrait && count > 7;
 
-    for (let i = 0; i < count; i++) {
-      const sprite = this.cardSprites[i];
-      const t = count > 1 ? (i - (count - 1) / 2) : 0;
-      const angle = t * angleStep;
+    if (useTwoTier) {
+      const topCount = Math.ceil(count / 2);
+      const bottomCount = count - topCount;
 
-      // Subtle arc curve: middle cards slightly higher
-      const arcOffset = Math.abs(t) * (isMobile ? 1.8 : 2.6);
+      // Strict left-to-right z-ordering:
+      // Right cards always stay above left cards so left cards never cover their right neighbors when selected
+      for (let i = 0; i < count; i++) {
+        this.addChild(this.cardSprites[i]);
+      }
 
-      sprite.targetX = startX + i * cardSpacing;
-      sprite.targetY = baseY + arcOffset;
-      sprite.targetRotation = angle;
-      sprite.targetScale = isMobile ? 0.85 : 1.0;
+      // 1. Top / Back Row (Lower value cards 0..topCount-1)
+      const topScale = 0.80;
+      const topHalfW = (76 * topScale) / 2;
+      const topMaxSpread = Math.max(0, this.viewWidth - 2 * (sideMargin + topHalfW));
+      const topSpread = Math.min(
+        topMaxSpread,
+        topCount * 42 * topScale
+      );
+      const topSpacing = topCount > 1 ? topSpread / (topCount - 1) : 0;
+      const topStartX = centerX - topSpread / 2;
+      const topBaseY = this.viewHeight - 176;
+      const topAngleStep = topCount > 1 ? (0.12 * 2) / (topCount - 1) : 0;
+
+      for (let i = 0; i < topCount; i++) {
+        const sprite = this.cardSprites[i];
+        const t = topCount > 1 ? (i - (topCount - 1) / 2) : 0;
+        const angle = t * topAngleStep;
+        const arcOffset = Math.abs(t) * 1.2;
+
+        sprite.targetX = topStartX + i * topSpacing;
+        sprite.targetY = topBaseY + arcOffset;
+        sprite.targetRotation = angle;
+        sprite.targetScale = topScale;
+        sprite.selectionLift = 18;
+      }
+
+      // 2. Bottom / Front Row (Higher value cards topCount..count-1)
+      const bottomScale = 0.84;
+      const bottomHalfW = (76 * bottomScale) / 2;
+      const bottomMaxSpread = Math.max(0, this.viewWidth - 2 * (sideMargin + bottomHalfW));
+      const bottomSpread = Math.min(
+        bottomMaxSpread,
+        bottomCount * 46 * bottomScale
+      );
+      const bottomSpacing = bottomCount > 1 ? bottomSpread / (bottomCount - 1) : 0;
+      const bottomStartX = centerX - bottomSpread / 2;
+      const bottomBaseY = this.viewHeight - 110;
+      const bottomAngleStep = bottomCount > 1 ? (0.12 * 2) / (bottomCount - 1) : 0;
+
+      for (let j = 0; j < bottomCount; j++) {
+        const sprite = this.cardSprites[topCount + j];
+        const t = bottomCount > 1 ? (j - (bottomCount - 1) / 2) : 0;
+        const angle = t * bottomAngleStep;
+        const arcOffset = Math.abs(t) * 1.2;
+
+        sprite.targetX = bottomStartX + j * bottomSpacing;
+        sprite.targetY = bottomBaseY + arcOffset;
+        sprite.targetRotation = angle;
+        sprite.targetScale = bottomScale;
+        sprite.selectionLift = 12; // Modest lift to prevent obscuring upper tier
+      }
+    } else {
+      // Single row fan for landscape / desktop or <= 7 cards
+      for (let i = 0; i < count; i++) {
+        this.addChild(this.cardSprites[i]);
+      }
+
+      const cardScale = isPortrait ? 0.80 : isMobile ? 0.86 : 1.0;
+      const halfW = (76 * cardScale) / 2;
+      const maxAllowedSpread = Math.max(0, this.viewWidth - 2 * (sideMargin + halfW));
+      const maxSpread = Math.min(
+        maxAllowedSpread,
+        count * (isPortrait ? 34 : isMobile ? 40 : 48) * cardScale
+      );
+      const cardSpacing = count > 1 ? maxSpread / (count - 1) : 0;
+
+      const baseY = this.viewHeight - (isPortrait ? 110 : isMobile ? 95 : 115);
+      const startX = centerX - maxSpread / 2;
+
+      const maxAngle = isPortrait ? Math.min(0.16, 0.02 * (count - 1)) : Math.min(0.24, 0.032 * (count - 1));
+      const angleStep = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
+
+      for (let i = 0; i < count; i++) {
+        const sprite = this.cardSprites[i];
+        const t = count > 1 ? (i - (count - 1) / 2) : 0;
+        const angle = t * angleStep;
+        const arcOffset = Math.abs(t) * (isPortrait ? 1.4 : 2.2);
+
+        sprite.targetX = startX + i * cardSpacing;
+        sprite.targetY = baseY + arcOffset;
+        sprite.targetRotation = angle;
+        sprite.targetScale = cardScale;
+        sprite.selectionLift = isPortrait ? 18 : 24;
+      }
     }
   }
 
@@ -183,41 +268,9 @@ export class HandFan extends Container {
       } else if (e.code === 'KeyH') {
         e.preventDefault();
         this.onHintRequested?.();
-      }
-    });
-  }
-
-  private setupDragSelection(): void {
-    this.eventMode = 'static';
-
-    this.on('pointerdown', () => {
-      this.isPointerDown = true;
-      this.dragVisitedCards.clear();
-    });
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('pointerup', () => {
-        this.isPointerDown = false;
-        this.dragVisitedCards.clear();
-      });
-    }
-
-    // Touch / swipe across cards to toggle selection
-    this.on('pointermove', (e) => {
-      if (!this.isPointerDown) return;
-      const local = this.toLocal(e.global);
-      // Find card under pointer
-      for (let i = this.cardSprites.length - 1; i >= 0; i--) {
-        const sprite = this.cardSprites[i];
-        const dx = Math.abs(local.x - sprite.x);
-        const dy = Math.abs(local.y - sprite.y);
-        if (dx < CARD_WIDTH / 2 && dy < CARD_HEIGHT / 2) {
-          if (!this.dragVisitedCards.has(sprite.cardCode)) {
-            this.dragVisitedCards.add(sprite.cardCode);
-            this.toggleCardSelection(sprite.cardCode);
-          }
-          break;
-        }
+      } else if (e.code === 'KeyS') {
+        e.preventDefault();
+        this.setCards(this.rawCards);
       }
     });
   }

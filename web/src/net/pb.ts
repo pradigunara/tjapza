@@ -1,4 +1,4 @@
-import PocketBase, { type RecordModel } from 'pocketbase';
+import PocketBase, { LocalAuthStore, type RecordModel } from 'pocketbase';
 
 // Base URL detection: use environment variable or relative in production, fallback to 8090 in dev
 const PB_URL =
@@ -8,7 +8,21 @@ const PB_URL =
     ? 'http://127.0.0.1:8090'
     : '/');
 
-export const pb = new PocketBase(PB_URL);
+function getSessionStorageKey(): string {
+  if (typeof window === 'undefined') return 'pb_auth';
+  try {
+    let tabId = window.sessionStorage.getItem('tjapza_tab_id');
+    if (!tabId) {
+      tabId = Math.random().toString(36).substring(2, 10);
+      window.sessionStorage.setItem('tjapza_tab_id', tabId);
+    }
+    return `pb_auth_${tabId}`;
+  } catch {
+    return 'pb_auth';
+  }
+}
+
+export const pb = new PocketBase(PB_URL, new LocalAuthStore(getSessionStorageKey()));
 
 // -----------------------------------------------------------------------------
 // Type Definitions

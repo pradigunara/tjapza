@@ -1,27 +1,22 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import {
-  type GameRecord,
-  type MoveRecord,
+  GameHeartbeat,
   fetchPlayerHand,
-  subscribeToGame,
   playCards,
   passTurn,
   startGame,
-  GameHeartbeat,
+  subscribeToGame,
+  type GameRecord,
+  type MoveRecord,
 } from '../net/pb';
 import { HandFan } from '../render/HandFan';
 import { SeatView } from '../render/SeatView';
 import { PileView } from '../render/PileView';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
-import {
-  isValidPlay,
-  getBotMove,
-  sortCards,
-  classifyCombo,
-} from '../rules/cards';
+import { isValidPlay, sortCards, classifyCombo, getBotMove } from '../rules/cards';
 
-export interface TableCallbacks {
+export interface TableSceneCallbacks {
   onGameFinished: (game: GameRecord, localSeatIndex: number) => void;
   onLeaveTable: () => void;
 }
@@ -30,9 +25,9 @@ export class TableScene {
   private app: Application;
   private game: GameRecord;
   private localSeatIndex: number;
-  private callbacks: TableCallbacks;
+  private callbacks: TableSceneCallbacks;
 
-  // Pixi Containers
+  // Pixi Display Containers
   private rootContainer: Container;
   private tableBg: Graphics;
   private seatViews: SeatView[] = [];
@@ -42,105 +37,123 @@ export class TableScene {
   // DOM HUD Overlay
   private hudContainer: HTMLElement;
 
-  // Realtime & Loop
-  private unsubscribeSSE?: () => void;
-  private heartbeat?: GameHeartbeat;
-  private tickerCallback?: (ticker: any) => void;
-  private timerInterval?: number;
-
-  // State
+  // Game Engine & State
   private handCards: number[] = [];
   private selectedCards: number[] = [];
-  private isOpeningMove = false;
   private isProcessingMove = false;
+  private heartbeat: GameHeartbeat | null = null;
+  private unsubscribeMoves?: () => void;
+  private isOpeningMove = false;
   private lastTurnIndex = -1;
+
+  private timerInterval?: number;
+  private tickerCallback?: (ticker: any) => void;
 
   constructor(
     app: Application,
     game: GameRecord,
     localSeatIndex: number,
-    callbacks: TableCallbacks
+    callbacks: TableSceneCallbacks
   ) {
     this.app = app;
     this.game = game;
     this.localSeatIndex = localSeatIndex;
     this.callbacks = callbacks;
 
-    // 1. Pixi Scene Hierarchy
+    // 1. Pixi Display Hierarchy
     this.rootContainer = new Container();
     this.tableBg = new Graphics();
     this.rootContainer.addChild(this.tableBg);
 
-    // 4 Seat views
+    // 4 Seats
     for (let i = 0; i < 4; i++) {
       const sv = new SeatView(i, i === this.localSeatIndex);
       this.seatViews.push(sv);
       this.rootContainer.addChild(sv);
     }
 
-    // Pile in center
+    // Center Trick Pile
     this.pileView = new PileView();
     this.rootContainer.addChild(this.pileView);
 
-    // Hand fan at bottom
+    // Player Hand Fan
     this.handFan = new HandFan();
     this.rootContainer.addChild(this.handFan);
 
-    // 2. DOM HUD Overlay
+    this.setupHandFanEvents();
+
+    // 2. DOM HUD Container
     this.hudContainer = document.createElement('div');
-    this.hudContainer.id = 'tjapza-table-hud';
     this.hudContainer.className = 'tjapza-table-hud';
+
+    // 3. Ticker loop
+    this.tickerCallback = (ticker) => this.update(ticker.deltaTime);
+    this.app.ticker.add(this.tickerCallback);
+
+    // 4. Timer update interval
+    this.timerInterval = window.setInterval(() => this.updateTimerUI(), 500);
   }
 
-  public async mount(parent: HTMLElement): Promise<void> {
+  public async mount(parentEl: HTMLElement): Promise<void> {
     this.app.stage.addChild(this.rootContainer);
-    parent.appendChild(this.hudContainer);
+    parentEl.appendChild(this.hudContainer);
 
-    this.setupHandFanEvents();
     this.renderHud();
     this.resize(window.innerWidth, window.innerHeight);
 
-    // Fetch local hand
-    this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
-    this.handFan.setCards(this.handCards);
+    // Initial game state apply
+    this.applyGameState();
 
-    // Initial audio deal swoosh if playing
+    // Fetch initial hand if playing
     if (this.game.status === 'playing') {
-      sound.playDeal();
+      try {
+        this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
+        this.handFan.setCards(this.handCards);
+        this.updateHudActionState();
+        sound.playDeal();
+      } catch (err) {
+        console.error('Failed to fetch initial hand:', err);
+      }
     }
 
-    // Start Pixi render ticker
-    this.tickerCallback = (ticker) => {
-      const delta = ticker.deltaTime || 1;
-      this.update(delta);
-    };
-    this.app.ticker.add(this.tickerCallback);
+    // Start Realtime SSE Subscriptions
+    try {
+      this.unsubscribeMoves = subscribeToGame(
+        this.game.id,
+        this.localSeatIndex,
+        {
+          onGameUpdate: (updatedGame: GameRecord) => this.handleGameUpdate(updatedGame),
+          onMoveCreated: (move: MoveRecord) => this.handleMoveCreated(move),
+          onHandUpdate: (cards: number[]) => {
+            this.handCards = cards;
+            this.handFan.setCards(cards);
+            this.updateHudActionState();
+          },
+        }
+      );
+    } catch (err) {
+      console.error('Failed to subscribe realtime moves:', err);
+      toast.warning('Realtime sync connecting in polling fallback mode…');
+    }
 
-    // Start 1s timer interval for turn countdown
-    this.timerInterval = window.setInterval(() => this.updateTimerUI(), 500);
-
-    // Setup Realtime SSE subscriptions
-    this.unsubscribeSSE = subscribeToGame(this.game.id, this.localSeatIndex, {
-      onGameUpdate: (updated) => this.handleGameUpdate(updated),
-      onMoveCreated: (move) => this.handleMoveCreated(move),
-      onHandUpdate: (cards) => this.handleHandUpdate(cards),
-    });
-
-    // Start client heartbeat ticker
+    // Start Client-driven Heartbeat
     this.heartbeat = new GameHeartbeat(
       this.game.id,
       () => this.game,
       () => this.localSeatIndex
     );
     this.heartbeat.start();
-
-    this.applyGameState();
   }
 
   public unmount(): void {
-    this.unsubscribeSSE?.();
-    this.heartbeat?.stop();
-
+    if (this.heartbeat) {
+      this.heartbeat.stop();
+      this.heartbeat = null;
+    }
+    if (this.unsubscribeMoves) {
+      this.unsubscribeMoves();
+      this.unsubscribeMoves = undefined;
+    }
     if (this.tickerCallback) {
       this.app.ticker.remove(this.tickerCallback);
     }
@@ -164,61 +177,110 @@ export class TableScene {
     this.handFan.onHintRequested = () => this.handleHintAction();
   }
 
+  // Viewport dimensions
+  private viewWidth = 1000;
+  private viewHeight = 700;
+
   public resize(width: number, height: number): void {
-    // 1. Draw Table Background Felt & Border
+    this.viewWidth = width || window.innerWidth;
+    this.viewHeight = height || window.innerHeight;
+    const cx = this.viewWidth / 2;
+    const cy = this.viewHeight / 2;
+    const isPortrait = this.viewHeight > this.viewWidth;
+    const isMobile = this.viewWidth < 640;
+
+    // 1. Draw Table Background Felt & Vignette
     this.tableBg.clear();
-    const cx = width / 2;
-    const cy = height / 2;
 
-    // Felt table surface
+    // Deep luxury dark felt backdrop
     this.tableBg.rect(0, 0, width, height);
-    this.tableBg.fill({ color: 0x0a1e15 });
+    this.tableBg.fill({ color: 0x05130e });
 
-    // Inner felt glow oval / rounded rect
-    const tableW = Math.min(width * 0.94, 1100);
-    const tableH = Math.min(height * 0.88, 720);
-    const tableRadius = Math.min(tableW, tableH) * 0.28;
+    if (isPortrait) {
+      // Mobile Portrait: Center table felt with generous spacing
+      const tableW = Math.min(width * 0.94, 400);
+      const tableH = Math.min(height * 0.75, 640);
+      const tableRadius = tableW * 0.40;
+      const feltCy = Math.round(height * 0.45);
 
-    this.tableBg.roundRect(cx - tableW / 2, cy - tableH / 2, tableW, tableH, tableRadius);
-    this.tableBg.fill({ color: 0x0f2d1e });
-    this.tableBg.stroke({ width: 4, color: 0xd97706, alpha: 0.7 });
+      this.tableBg.roundRect(cx - tableW / 2, feltCy - tableH / 2, tableW, tableH, tableRadius);
+      this.tableBg.fill({ color: 0x0a2a1c });
+      this.tableBg.stroke({ width: 3, color: 0xd97706, alpha: 0.75 });
 
-    // Subtle table pattern center
-    this.tableBg.circle(cx, cy, Math.min(tableW, tableH) * 0.25);
-    this.tableBg.stroke({ width: 1, color: 0x166534, alpha: 0.4 });
+      // 2. Position Seats in Top-Arc Layout below sleek top bar
+      const topArcY = Math.max(96, height * 0.12);
 
-    // 2. Position Seats relative to local seat
-    const isMobile = width < 600;
-    const seatMarginX = isMobile ? 32 : 70;
-    const seatMarginY = isMobile ? 45 : 60;
+      for (let i = 0; i < 4; i++) {
+        const sv = this.seatViews[i];
+        const relPos = (i - this.localSeatIndex + 4) % 4;
 
-    for (let i = 0; i < 4; i++) {
-      const sv = this.seatViews[i];
-      // Relative offset from local seat
-      const relPos = (i - this.localSeatIndex + 4) % 4;
-
-      if (relPos === 0) {
-        // Bottom (Local Player)
-        sv.layoutForPosition('bottom');
-        sv.position.set(cx, height - (isMobile ? 120 : 145));
-      } else if (relPos === 1) {
-        // Left
-        sv.layoutForPosition('left');
-        sv.position.set(seatMarginX, cy - 30);
-      } else if (relPos === 2) {
-        // Top
-        sv.layoutForPosition('top');
-        sv.position.set(cx, seatMarginY + 20);
-      } else if (relPos === 3) {
-        // Right
-        sv.layoutForPosition('right');
-        sv.position.set(width - seatMarginX, cy - 30);
+        if (relPos === 0) {
+          // Local player canvas seat hidden on mobile portrait (HUD controls show turn)
+          sv.visible = false;
+        } else if (relPos === 1) {
+          // Left Opponent
+          sv.visible = true;
+          sv.layoutForPosition('top_arc');
+          sv.position.set(width * 0.18, topArcY + 18);
+        } else if (relPos === 2) {
+          // Center Top Opponent
+          sv.visible = true;
+          sv.layoutForPosition('top_arc');
+          sv.position.set(width * 0.50, topArcY + 6);
+        } else if (relPos === 3) {
+          // Right Opponent
+          sv.visible = true;
+          sv.layoutForPosition('top_arc');
+          sv.position.set(width * 0.82, topArcY + 18);
+        }
       }
-    }
 
-    // 3. Position Pile & HandFan
-    this.pileView.position.set(cx, cy - (isMobile ? 15 : 20));
-    this.handFan.resize(width, height);
+      // 3. Position Center Pile comfortably above HandFan
+      const pileY = Math.round(height * 0.40);
+      this.tableBg.circle(cx, pileY, tableW * 0.25);
+      this.tableBg.stroke({ width: 1, color: 0x15803d, alpha: 0.35 });
+
+      this.pileView.position.set(cx, pileY);
+      this.handFan.resize(width, height);
+    } else {
+      // Landscape / Desktop Layout: Classic 4-side casino oval
+      const tableW = Math.min(width * 0.94, 1140);
+      const tableH = Math.min(height * 0.88, 740);
+      const tableRadius = Math.min(tableW, tableH) * 0.28;
+
+      this.tableBg.roundRect(cx - tableW / 2, cy - tableH / 2, tableW, tableH, tableRadius);
+      this.tableBg.fill({ color: 0x0a2a1c });
+      this.tableBg.stroke({ width: 4, color: 0xd97706, alpha: 0.8 });
+
+      this.tableBg.circle(cx, cy, Math.min(tableW, tableH) * 0.24);
+      this.tableBg.stroke({ width: 1, color: 0x15803d, alpha: 0.35 });
+
+      const seatMarginX = isMobile ? 35 : 70;
+      const seatMarginY = isMobile ? 45 : 60;
+
+      for (let i = 0; i < 4; i++) {
+        const sv = this.seatViews[i];
+        sv.visible = true;
+        const relPos = (i - this.localSeatIndex + 4) % 4;
+
+        if (relPos === 0) {
+          sv.layoutForPosition('bottom');
+          sv.position.set(cx, height - (isMobile ? 120 : 145));
+        } else if (relPos === 1) {
+          sv.layoutForPosition('left');
+          sv.position.set(seatMarginX, cy - 20);
+        } else if (relPos === 2) {
+          sv.layoutForPosition('top');
+          sv.position.set(cx, seatMarginY + 20);
+        } else if (relPos === 3) {
+          sv.layoutForPosition('right');
+          sv.position.set(width - seatMarginX, cy - 20);
+        }
+      }
+
+      this.pileView.position.set(cx, cy - (isMobile ? 15 : 20));
+      this.handFan.resize(width, height);
+    }
   }
 
   private async handleGameUpdate(game: GameRecord): Promise<void> {
@@ -248,10 +310,10 @@ export class TableScene {
 
       this.pileView.setCombo(
         {
-          type: move.combo_type,
-          power: move.combo_power,
-          cards: move.cards || [],
           seat_index: move.seat_index,
+          cards: move.cards || [],
+          type: move.combo_type || 'combo',
+          power: move.combo_power || 0,
         },
         seatName,
         origin
@@ -260,12 +322,6 @@ export class TableScene {
       sound.playPass();
       toast.info(`${seatName} passed`);
     }
-  }
-
-  private handleHandUpdate(cards: number[]): void {
-    this.handCards = cards;
-    this.handFan.setCards(cards);
-    this.updateHudActionState();
   }
 
   private applyGameState(): void {
@@ -287,6 +343,9 @@ export class TableScene {
     // Check if turn changed to local player for turn chime
     if (currentTurn === this.localSeatIndex && this.lastTurnIndex !== this.localSeatIndex) {
       sound.playTurnChime();
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate([20, 50, 20]); } catch (_) {}
+      }
     }
     this.lastTurnIndex = currentTurn;
 
@@ -318,53 +377,41 @@ export class TableScene {
 
     // Update Pile
     if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
-      const pName = seats[lastCombo.seat_index]?.name || `Seat ${lastCombo.seat_index + 1}`;
+      const pName = seats[lastCombo.seat_index]?.name;
       this.pileView.setCombo(lastCombo, pName);
     } else {
       this.pileView.clearPile();
     }
 
+    this.resize(this.viewWidth, this.viewHeight);
     this.renderHud();
     this.updateHudActionState();
   }
 
   private renderHud(): void {
     const isWaiting = this.game.status === 'waiting';
-    const isMuted = sound.isMuted();
-    const currentTurn = this.game.turn_index;
-    const isMyTurn = this.game.status === 'playing' && currentTurn === this.localSeatIndex;
-    const seats = this.game.seats || [];
-    const turnPlayerName = seats[currentTurn]?.name || `Seat ${currentTurn + 1}`;
+    const isMyTurn =
+      this.game.status === 'playing' && this.game.turn_index === this.localSeatIndex;
 
-    let statusText = '';
-    if (isWaiting) {
-      const seatedCount = seats.filter((s) => s && s.user_id).length;
-      statusText = `Waiting for players (${seatedCount}/4)…`;
-    } else if (isMyTurn) {
-      statusText = '✨ Your Turn to Play!';
-    } else {
-      statusText = `Waiting for ${turnPlayerName}…`;
-    }
+    const seats = this.game.seats || [];
 
     this.hudContainer.innerHTML = `
-      <!-- Top HUD Bar -->
+      <!-- Top Clean Navigation Bar -->
       <div class="table-top-bar">
         <div class="top-bar-left">
-          <div class="room-code-badge" id="btn-copy-code" title="Click to copy room code">
+          <div class="room-code-badge" id="btn-copy-code" title="Click to copy Room Code">
             <span class="badge-label">ROOM</span>
-            <span class="badge-code">${this.game.room_code || '------'}</span>
+            <span class="badge-code">${this.game.room_code || '---'}</span>
             <span class="badge-copy-icon">📋</span>
           </div>
-          <span class="table-status-pill ${isMyTurn ? 'my-turn' : ''}">${statusText}</span>
         </div>
 
         <div class="top-bar-right">
-          <!-- Turn Timer (120s bar) -->
           ${
-            !isWaiting
+            this.game.status === 'playing'
               ? `
-            <div class="turn-timer-hud" id="turn-timer-hud">
-              <span class="timer-icon">⏳</span>
+            <div class="turn-timer-hud" title="Turn Timer">
+              <span class="timer-icon">⏱️</span>
               <span class="timer-text" id="turn-timer-text">120s</span>
               <div class="timer-progress-track">
                 <div class="timer-progress-bar" id="turn-timer-bar"></div>
@@ -375,27 +422,24 @@ export class TableScene {
           }
 
           <button id="btn-table-sound" class="btn-icon" title="Toggle Sound">
-            ${
-              isMuted
-                ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>`
-                : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`
-            }
+            <span>${sound.isMuted() ? '🔇' : '🔊'}</span>
           </button>
 
-          <button id="btn-leave-table" class="btn-icon-text btn-leave" title="Leave Table">
-            <span>Leave</span>
+          <button id="btn-leave-table" class="btn-icon btn-leave" title="Leave Table">
+            <span class="leave-text-desktop">Leave</span>
+            <span class="leave-icon-mobile">✕</span>
           </button>
         </div>
       </div>
 
-      <!-- Waiting Room Modal Overlay (if waiting) -->
+      <!-- Center Lobby Waiting Overlay -->
       ${
         isWaiting
           ? `
-        <div class="waiting-room-overlay">
+        <div class="table-waiting-overlay">
           <div class="waiting-card">
             <h2 class="waiting-title">Game Lobby</h2>
-            <p class="waiting-sub">Room Code: <strong class="gold-text">${this.game.room_code}</strong></p>
+            <p class="waiting-subtitle">Room Code: <strong class="text-gold">${this.game.room_code}</strong></p>
 
             <div class="waiting-seats-grid">
               ${[0, 1, 2, 3]
@@ -423,26 +467,35 @@ export class TableScene {
           : ''
       }
 
-      <!-- Bottom Action Controls Bar -->
+      <!-- Bottom Selected Combo Indicator & Action Controls Bar -->
       ${
         !isWaiting
           ? `
-        <div class="table-action-bar">
-          <button id="btn-action-sort" class="btn-hud-action btn-sort" title="Sort Hand (S)">
-            <span>Sort</span>
-          </button>
-          <button id="btn-action-deselect" class="btn-hud-action" title="Clear Selection (D)">
-            <span>Clear</span>
-          </button>
-          <button id="btn-action-hint" class="btn-hud-action btn-hint" title="Hint Play (H)">
-            <span>Hint</span>
-          </button>
-          <button id="btn-action-pass" class="btn-hud-action btn-pass" title="Pass Turn (P)">
-            <span>Pass</span>
-          </button>
-          <button id="btn-action-play" class="btn-hud-action btn-play" title="Play Selected Cards (Space)">
-            <span>Play</span>
-          </button>
+        <div class="table-bottom-group">
+          <div id="selected-combo-pill" class="selected-combo-pill" style="display: none;"></div>
+
+          <div class="table-action-bar ${isMyTurn ? 'is-my-turn' : ''}">
+            <div class="action-utility-group">
+              <button id="btn-action-sort" class="btn-hud-action btn-sort" title="Sort Hand (S)">
+                <span>Sort</span>
+              </button>
+              <button id="btn-action-deselect" class="btn-hud-action" title="Clear Selection (D)">
+                <span>Clear</span>
+              </button>
+            </div>
+
+            <div class="action-main-group">
+              <button id="btn-action-hint" class="btn-hud-action btn-hint" title="Hint Play (H)">
+                <span>Hint</span>
+              </button>
+              <button id="btn-action-pass" class="btn-hud-action btn-pass" title="Pass Turn (P)">
+                <span>Pass</span>
+              </button>
+              <button id="btn-action-play" class="btn-hud-action btn-play" title="Play Selected Cards (Space)">
+                <span>Play</span>
+              </button>
+            </div>
+          </div>
         </div>
       `
           : ''
@@ -536,6 +589,32 @@ export class TableScene {
     const btnPlay = this.hudContainer.querySelector('#btn-action-play') as HTMLButtonElement;
     const btnPass = this.hudContainer.querySelector('#btn-action-pass') as HTMLButtonElement;
     const btnHint = this.hudContainer.querySelector('#btn-action-hint') as HTMLButtonElement;
+    const comboPill = this.hudContainer.querySelector('#selected-combo-pill') as HTMLElement;
+
+    // Update Floating Selected Combo Indicator
+    if (comboPill) {
+      if (this.selectedCards.length > 0) {
+        const classified = classifyCombo(this.selectedCards);
+        if (classified) {
+          let label = classified.type.replace(/_/g, ' ').toUpperCase();
+          if (classified.type === 'single') label = 'Single';
+          else if (classified.type === 'pair') label = 'Pair';
+          else if (classified.type === 'straight') label = 'Straight';
+          else if (classified.type === 'flush') label = 'Flush';
+          else if (classified.type === 'full_house') label = 'Full House';
+          else if (classified.type === 'quads') label = 'Four of a Kind';
+          else if (classified.type === 'straight_flush') label = 'Straight Flush';
+
+          comboPill.textContent = `✨ ${label} (${this.selectedCards.length} cards)`;
+          comboPill.style.display = 'inline-block';
+        } else {
+          comboPill.textContent = `${this.selectedCards.length} cards selected`;
+          comboPill.style.display = 'inline-block';
+        }
+      } else {
+        comboPill.style.display = 'none';
+      }
+    }
 
     if (!btnPlay || !btnPass) return;
 
@@ -639,6 +718,9 @@ export class TableScene {
     try {
       await playCards(this.game.id, this.localSeatIndex, played);
       sound.playCardSnap();
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate(30); } catch (_) {}
+      }
       this.handCards = this.handCards.filter((c) => !played.includes(c));
       this.handFan.setCards(this.handCards);
       this.handFan.clearSelection();
@@ -675,6 +757,7 @@ export class TableScene {
 
     try {
       await passTurn(this.game.id, this.localSeatIndex);
+      sound.playPass();
       this.handFan.clearSelection();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to pass turn');

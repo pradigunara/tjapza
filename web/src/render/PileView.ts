@@ -26,7 +26,7 @@ export class PileView extends Container {
 
     const titleStyle = new TextStyle({
       fontFamily: 'system-ui, sans-serif',
-      fontSize: 13,
+      fontSize: 12,
       fontWeight: '800',
       fill: '#fde047',
       letterSpacing: 0.5,
@@ -37,7 +37,7 @@ export class PileView extends Container {
 
     const subtitleStyle = new TextStyle({
       fontFamily: 'system-ui, sans-serif',
-      fontSize: 11,
+      fontSize: 10,
       fontWeight: '600',
       fill: '#cbd5e1',
     });
@@ -78,7 +78,7 @@ export class PileView extends Container {
 
     const cards = combo.cards;
     const count = cards.length;
-    const spacing = count > 1 ? Math.min(38, 160 / (count - 1)) : 0;
+    const spacing = count > 1 ? Math.min(34, 150 / (count - 1)) : 0;
     const startX = -((count - 1) * spacing) / 2;
 
     sound.playCardSnap();
@@ -91,7 +91,6 @@ export class PileView extends Container {
       const randomAngle = (Math.random() - 0.5) * 0.08;
 
       if (originPos) {
-        // Convert global origin to local coordinate
         const localOrigin = this.toLocal(originPos);
         sprite.x = localOrigin.x;
         sprite.y = localOrigin.y;
@@ -99,13 +98,13 @@ export class PileView extends Container {
       } else {
         sprite.x = startX + i * spacing;
         sprite.y = -20;
-        sprite.scale.set(0.9);
+        sprite.scale.set(0.85);
       }
 
       sprite.targetX = startX + i * spacing;
       sprite.targetY = 0;
       sprite.targetRotation = randomAngle;
-      sprite.targetScale = 0.95;
+      sprite.targetScale = 0.9;
 
       this.cardSprites.push(sprite);
       this.cardContainer.addChild(sprite);
@@ -127,16 +126,16 @@ export class PileView extends Container {
     this.bannerTitle.text = comboName;
     this.bannerSubtitle.text = playerName ? `Played by ${playerName}` : '';
 
-    const bannerW = Math.max(140, this.bannerTitle.width + 40);
-    const bannerH = 38;
+    const bannerW = Math.max(130, this.bannerTitle.width + 36);
+    const bannerH = 34;
     this.bannerBg.clear();
     this.bannerBg.roundRect(-bannerW / 2, -bannerH / 2, bannerW, bannerH, 8);
-    this.bannerBg.fill({ color: 0x0f172a, alpha: 0.88 });
-    this.bannerBg.stroke({ width: 1.5, color: 0xeab308, alpha: 0.8 });
+    this.bannerBg.fill({ color: 0x0f172a, alpha: 0.9 });
+    this.bannerBg.stroke({ width: 1.2, color: 0xeab308, alpha: 0.85 });
 
-    this.bannerTitle.position.set(0, -7);
-    this.bannerSubtitle.position.set(0, 9);
-    this.bannerContainer.position.set(0, 72);
+    this.bannerTitle.position.set(0, -6);
+    this.bannerSubtitle.position.set(0, 8);
+    this.bannerContainer.position.set(0, 68);
     this.bannerContainer.visible = true;
   }
 
@@ -158,7 +157,7 @@ export class PileView extends Container {
         sprite.destroy();
       }
       this.cardSprites = [];
-    }, 250);
+    }, 280);
   }
 
   public update(delta: number): void {

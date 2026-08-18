@@ -19,12 +19,12 @@ export class CardSprite extends Container {
   private frontContainer: Container;
   private backContainer: Container;
 
-  // Text elements
+  // Text & Art elements
   private topLeftRankText!: Text;
   private topLeftSuitText!: Text;
   private bottomRightRankText!: Text;
   private bottomRightSuitText!: Text;
-  private centerSuitText!: Text;
+  private centerArtContainer!: Container;
 
   // Smooth tween targets
   public targetX = 0;
@@ -32,6 +32,7 @@ export class CardSprite extends Container {
   public targetRotation = 0;
   public targetScale = 1;
   public targetAlpha = 1;
+  public selectionLift = 24;
 
   public onCardClick?: (card: CardSprite) => void;
 
@@ -122,20 +123,24 @@ export class CardSprite extends Container {
   private redrawBase(): void {
     // Redraw shadow
     this.shadowGraphics.clear();
-    const shadowOffset = this.selected ? 10 : this.isHovered ? 6 : 3;
-    const shadowAlpha = this.selected ? 0.35 : this.isHovered ? 0.28 : 0.18;
+    const shadowOffset = this.selected ? 12 : this.isHovered ? 6 : 3;
+    const shadowAlpha = this.selected ? 0.4 : this.isHovered ? 0.28 : 0.18;
     this.shadowGraphics.roundRect(1, shadowOffset, CARD_WIDTH - 2, CARD_HEIGHT - 2, CARD_RADIUS);
     this.shadowGraphics.fill({ color: 0x000000, alpha: shadowAlpha });
 
     // Redraw card body
     this.cardGraphics.clear();
     if (this.faceUp) {
-      // Crisp front surface
+      // Crisp linen cardstock with subtle inner bevel
       this.cardGraphics.roundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS);
       this.cardGraphics.fill({ color: 0xffffff });
       this.cardGraphics.stroke({ width: 1.2, color: 0xd1d5db });
+
+      // Subtle inner filigree border
+      this.cardGraphics.roundRect(3.5, 3.5, CARD_WIDTH - 7, CARD_HEIGHT - 7, CARD_RADIUS - 2);
+      this.cardGraphics.stroke({ width: 0.8, color: 0xe2e8f0, alpha: 0.8 });
     } else {
-      // Ornate back surface
+      // Luxury casino midnight navy back surface
       this.cardGraphics.roundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS);
       this.cardGraphics.fill({ color: 0x0f172a });
       this.cardGraphics.stroke({ width: 1.5, color: 0x334155 });
@@ -144,11 +149,11 @@ export class CardSprite extends Container {
     // Redraw selection glow
     this.selectionGlow.clear();
     if (this.selected) {
-      this.selectionGlow.roundRect(-2, -2, CARD_WIDTH + 4, CARD_HEIGHT + 4, CARD_RADIUS + 2);
-      this.selectionGlow.stroke({ width: 3, color: 0xf59e0b });
+      this.selectionGlow.roundRect(-2.5, -2.5, CARD_WIDTH + 5, CARD_HEIGHT + 5, CARD_RADIUS + 2);
+      this.selectionGlow.stroke({ width: 3.5, color: 0xf59e0b });
     } else if (this.isHovered && this.faceUp) {
-      this.selectionGlow.roundRect(-1, -1, CARD_WIDTH + 2, CARD_HEIGHT + 2, CARD_RADIUS + 1);
-      this.selectionGlow.stroke({ width: 1.5, color: 0x60a5fa, alpha: 0.8 });
+      this.selectionGlow.roundRect(-1.5, -1.5, CARD_WIDTH + 3, CARD_HEIGHT + 3, CARD_RADIUS + 1);
+      this.selectionGlow.stroke({ width: 2, color: 0x60a5fa, alpha: 0.85 });
     }
   }
 
@@ -168,13 +173,6 @@ export class CardSprite extends Container {
     const suitStyle = new TextStyle({
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       fontSize: 14,
-      fontWeight: 'bold',
-      fill: textColor,
-    });
-
-    const centerSuitStyle = new TextStyle({
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      fontSize: 34,
       fontWeight: 'bold',
       fill: textColor,
     });
@@ -199,11 +197,87 @@ export class CardSprite extends Container {
     this.bottomRightSuitText.position.set(CARD_WIDTH - 6, CARD_HEIGHT - 22);
     this.frontContainer.addChild(this.bottomRightSuitText);
 
-    // Center large suit glyph
-    this.centerSuitText = new Text({ text: SUIT_SYMBOLS[suit], style: centerSuitStyle });
-    this.centerSuitText.anchor.set(0.5, 0.5);
-    this.centerSuitText.position.set(CARD_WIDTH / 2, CARD_HEIGHT / 2);
-    this.frontContainer.addChild(this.centerSuitText);
+    // Center Artwork Container
+    this.centerArtContainer = new Container();
+    this.centerArtContainer.position.set(CARD_WIDTH / 2, CARD_HEIGHT / 2);
+    this.frontContainer.addChild(this.centerArtContainer);
+
+    this.drawCenterArt(rank, suit, textColor);
+  }
+
+  private drawCenterArt(rank: number, suit: number, textColor: string): void {
+    // Remove old children in center
+    this.centerArtContainer.removeChildren();
+
+    const isFaceCard = rank === 8 || rank === 9 || rank === 10; // J=8, Q=9, K=10
+    const isBigTwo = rank === 12; // Rank 2 (Supreme card!)
+
+    if (isFaceCard) {
+      // Regal Court Card Artwork
+      const artGfx = new Graphics();
+      const frameColor = textColor === '#dc2626' ? 0xdc2626 : 0x1e293b;
+
+      // Decorative court inner frame
+      artGfx.roundRect(-22, -26, 44, 52, 4);
+      artGfx.fill({ color: 0xf8fafc, alpha: 0.95 });
+      artGfx.stroke({ width: 1.2, color: frameColor, alpha: 0.7 });
+
+      // Crown / Regal Iconography
+      const crownStyle = new TextStyle({
+        fontSize: 22,
+      });
+      const crownIcon = rank === 10 ? '👑' : rank === 9 ? '👸' : '⚔️';
+      const crownText = new Text({ text: crownIcon, style: crownStyle });
+      crownText.anchor.set(0.5, 0.5);
+      crownText.position.set(0, -6);
+
+      // Micro suit icon at bottom of court card
+      const suitStyle = new TextStyle({
+        fontSize: 13,
+        fontWeight: 'bold',
+        fill: textColor,
+      });
+      const subSuit = new Text({ text: SUIT_SYMBOLS[suit], style: suitStyle });
+      subSuit.anchor.set(0.5, 0.5);
+      subSuit.position.set(0, 16);
+
+      this.centerArtContainer.addChild(artGfx);
+      this.centerArtContainer.addChild(crownText);
+      this.centerArtContainer.addChild(subSuit);
+    } else if (isBigTwo) {
+      // Big Two (Supreme 2s) with gold star crest
+      const starStyle = new TextStyle({
+        fontSize: 13,
+      });
+      const star = new Text({ text: '⭐', style: starStyle });
+      star.anchor.set(0.5, 0.5);
+      star.position.set(0, -18);
+
+      const suitStyle = new TextStyle({
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: 34,
+        fontWeight: 'bold',
+        fill: textColor,
+      });
+      const suitText = new Text({ text: SUIT_SYMBOLS[suit], style: suitStyle });
+      suitText.anchor.set(0.5, 0.5);
+      suitText.position.set(0, 4);
+
+      this.centerArtContainer.addChild(star);
+      this.centerArtContainer.addChild(suitText);
+    } else {
+      // Number Cards: Crisp bold center suit glyph
+      const centerSuitStyle = new TextStyle({
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontSize: 34,
+        fontWeight: 'bold',
+        fill: textColor,
+      });
+      const centerSuitText = new Text({ text: SUIT_SYMBOLS[suit], style: centerSuitStyle });
+      centerSuitText.anchor.set(0.5, 0.5);
+      centerSuitText.position.set(0, 0);
+      this.centerArtContainer.addChild(centerSuitText);
+    }
   }
 
   private updateFrontContent(): void {
@@ -227,8 +301,7 @@ export class CardSprite extends Container {
     this.bottomRightSuitText.text = suitSym;
     this.bottomRightSuitText.style.fill = textColor;
 
-    this.centerSuitText.text = suitSym;
-    this.centerSuitText.style.fill = textColor;
+    this.drawCenterArt(rank, suit, textColor);
   }
 
   private buildBack(): void {
@@ -251,7 +324,7 @@ export class CardSprite extends Container {
     pattern.fill({ color: 0x1e293b });
     pattern.stroke({ width: 1.2, color: 0xf59e0b });
 
-    // Inner decorative crosshatch
+    // Center luxury casino medallion
     const centerStyle = new TextStyle({
       fontFamily: 'serif',
       fontSize: 20,
@@ -272,15 +345,16 @@ export class CardSprite extends Container {
   public update(delta: number): void {
     const factor = Math.min(1, 0.22 * delta);
 
-    // Apply selection lift (-24px when selected)
-    const effectiveTargetY = this.selected ? this.targetY - 24 : this.targetY;
+    // Apply tactile selection lift and subtle scale pop
+    const effectiveTargetY = this.selected ? this.targetY - this.selectionLift : this.targetY;
+    const effectiveScale = this.selected ? this.targetScale * 1.03 : this.targetScale;
 
     this.x += (this.targetX - this.x) * factor;
     this.y += (effectiveTargetY - this.y) * factor;
     this.rotation += (this.targetRotation - this.rotation) * factor;
 
     const curScale = this.scale.x;
-    const nextScale = curScale + (this.targetScale - curScale) * factor;
+    const nextScale = curScale + (effectiveScale - curScale) * factor;
     this.scale.set(nextScale, nextScale);
 
     this.alpha += (this.targetAlpha - this.alpha) * factor;
