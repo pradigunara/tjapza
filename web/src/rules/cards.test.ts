@@ -289,19 +289,28 @@ implementations.forEach(({ name, engine }) => {
       });
 
       test('Quads compares 4-of-a-kind rank regardless of kicker rank', () => {
-        const quad3with2 = ['3♦', '3♣', '3♥', '3♠', '2♠'].map(stringToCard); // 4x3s + 2♠ kicker
-        const quad4with4 = ['4♦', '4♣', '4♥', '4♠', '3♦'].map(stringToCard); // 4x4s + 3♦ kicker
-        expect(canBeat(quad3with2, quad4with4)).toBe(true);
-        expect(canBeat(quad4with4, quad3with2)).toBe(false);
+        const quads8sHighKicker = ['8♦', '8♣', '8♥', '8♠', '2♠'].map(stringToCard);
+        const quads9sLowKicker = ['9♦', '9♣', '9♥', '9♠', '3♦'].map(stringToCard);
+
+        expect(canBeat(quads8sHighKicker, quads9sLowKicker)).toBe(true);
+        expect(canBeat(quads9sLowKicker, quads8sHighKicker)).toBe(false);
       });
 
       test('Straight Flush compares straight order then suit', () => {
-        const sfA2345_D = ['A♦', '2♦', '3♦', '4♦', '5♦'].map(stringToCard);
-        const sfA2345_S = ['A♠', '2♠', '3♠', '4♠', '5♠'].map(stringToCard);
-        const sf34567_D = ['3♦', '4♦', '5♦', '6♦', '7♦'].map(stringToCard);
+        const sfLow = ['3♦', '4♦', '5♦', '6♦', '7♦'].map(stringToCard); // 7 high
+        const sfHigh = ['8♦', '9♦', '10♦', 'J♦', 'Q♦'].map(stringToCard); // Q high
+        const sfSamePatternSpade = ['3♠', '4♠', '5♠', '6♠', '7♠'].map(stringToCard);
 
-        expect(canBeat(sfA2345_D, sfA2345_S)).toBe(true);
-        expect(canBeat(sfA2345_S, sf34567_D)).toBe(true);
+        expect(canBeat(sfLow, sfHigh)).toBe(true);
+        expect(canBeat(sfHigh, sfLow)).toBe(false);
+        expect(canBeat(sfLow, sfSamePatternSpade)).toBe(true);
+        expect(canBeat(sfSamePatternSpade, sfLow)).toBe(false);
+      });
+
+      test('Straight Flush beats any Quads of 2s', () => {
+        const quads2s = ['2♦', '2♣', '2♥', '2♠', 'A♠'].map(stringToCard);
+        const sfLowest = ['A♦', '2♦', '3♦', '4♦', '5♦'].map(stringToCard);
+        expect(canBeat(quads2s, sfLowest)).toBe(true);
       });
     });
 
@@ -316,14 +325,17 @@ implementations.forEach(({ name, engine }) => {
         const validStraight = ['3♦', '4♣', '5♥', '6♠', '7♦'].map(stringToCard);
         const invalidStraight = ['3♣', '4♣', '5♥', '6♠', '7♦'].map(stringToCard);
 
+        const validFullHouse = ['3♦', '3♣', '3♥', '4♦', '4♣'].map(stringToCard);
+        const invalidFullHouse = ['3♣', '3♥', '3♠', '4♦', '4♣'].map(stringToCard);
+
         expect(isOpeningMoveValid(validSingle)).toBe(true);
         expect(isOpeningMoveValid(invalidSingle)).toBe(false);
-
         expect(isOpeningMoveValid(validPair)).toBe(true);
         expect(isOpeningMoveValid(invalidPair)).toBe(false);
-
         expect(isOpeningMoveValid(validStraight)).toBe(true);
         expect(isOpeningMoveValid(invalidStraight)).toBe(false);
+        expect(isOpeningMoveValid(validFullHouse)).toBe(true);
+        expect(isOpeningMoveValid(invalidFullHouse)).toBe(false);
       });
 
       test('isValidPlay enforces opening trick conditions and hand ownership', () => {

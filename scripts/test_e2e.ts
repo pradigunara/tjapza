@@ -151,13 +151,23 @@ async function runE2E() {
       throw new Error(`Expected 4 result records, got ${results.items.length}`);
     }
 
-    // 7. Test Rematch Endpoint
-    console.log("🔄 Testing Rematch Creation...");
-    const rematchRes = await pb.send("/api/tjapza/rematch", {
+    // 7. Test Rematch Endpoint & Idempotency
+    console.log("🔄 Testing Rematch Creation & Idempotency...");
+    const rematchRes1 = await pb.send("/api/tjapza/rematch", {
       method: "POST",
       body: { game_id: game.id },
     });
-    console.log(`✅ Rematch created: New Game ID ${rematchRes.game.id}, Room ${rematchRes.game.room_code}`);
+    console.log(`✅ Rematch created: New Game ID ${rematchRes1.game.id}, Room ${rematchRes1.game.room_code}`);
+
+    // Calling rematch again should return the exact same rematch game ID (idempotency)
+    const rematchRes2 = await pb.send("/api/tjapza/rematch", {
+      method: "POST",
+      body: { game_id: game.id },
+    });
+    if (rematchRes1.game.id !== rematchRes2.game.id) {
+      throw new Error("Rematch must be idempotent and return the same game ID!");
+    }
+    console.log("✅ Rematch idempotency verified (same game ID returned across duplicate calls)!");
 
     // Verify original game remains untouched and finished
     const originalGame = await pb.collection("games").getOne(game.id);
@@ -166,8 +176,8 @@ async function runE2E() {
     }
     console.log("✅ Original game record remains immutable!");
 
-    // 8. Test Join Room & Quickplay Endpoints
-    console.log("🔄 Testing Join Room & Quickplay Endpoints...");
+    // 8. Test Join Room & Quickplay Endpoints & Host Authorization
+    console.log("🔄 Testing Join Room, Host Authorization & Quickplay...");
     const user2Email = `test2_${Date.now()}@tjapza.local`;
     await pb.collection("users").create({
       email: user2Email,
@@ -178,12 +188,12 @@ async function runE2E() {
     const pb2 = new PocketBase(PB_URL);
     await pb2.collection("users").authWithPassword(user2Email, password);
 
-    // Create a new room with user 1
+    // Create a new room with user 1 (Host at Seat 0)
     const joinTestRoom = await pb.send("/api/tjapza/room/create", {
       method: "POST",
       body: { is_public: false },
     });
-    // User 2 joins by room_code
+    // User 2 joins by room_code (Seat 1)
     const joinRes = await pb2.send("/api/tjapza/room/join", {
       method: "POST",
       body: { room_code: joinTestRoom.game.room_code },
@@ -192,6 +202,31 @@ async function runE2E() {
       throw new Error(`Expected joined seat_index 1, got ${joinRes.seat_index}`);
     }
     console.log(`✅ User 2 successfully joined room ${joinTestRoom.game.room_code} at seat ${joinRes.seat_index}`);
+
+    // Verify that Non-Host (User 2) CANNOT start the room (403 Forbidden)
+    let nonHostStartFailed = false;
+    try {
+      await pb2.send("/api/tjapza/room/start", {
+        method: "POST",
+        body: { game_id: joinTestRoom.game.id },
+      });
+    } catch (err: any) {
+      nonHostStartFailed = (err?.status === 403);
+    }
+    if (!nonHostStartFailed) {
+      throw new Error("Non-host player should be forbidden (403) from starting the room!");
+    }
+    console.log("✅ Room Host authorization verified (Non-host cannot start room)!");
+
+    // Host (User 1) starts the room successfully
+    const hostStartRes = await pb.send("/api/tjapza/room/start", {
+      method: "POST",
+      body: { game_id: joinTestRoom.game.id },
+    });
+    if (hostStartRes.game.status !== "playing") {
+      throw new Error("Room host should be able to start the game!");
+    }
+    console.log("✅ Host successfully started the room!");
 
     // Test Quickplay
     const quickplayRes1 = await pb.send("/api/tjapza/quickplay", {
