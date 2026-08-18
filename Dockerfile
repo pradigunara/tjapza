@@ -15,11 +15,8 @@ RUN apk add --no-cache ca-certificates wget unzip
 
 WORKDIR /app
 
-# Download official PocketBase binary matching target architecture
-RUN case "${TARGETARCH}" in \
-      "arm64") ARCH="arm64" ;; \
-      *)       ARCH="amd64" ;; \
-    esac && \
+# Download official PocketBase binary matching host/container architecture
+RUN ARCH="$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" && \
     wget https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_${ARCH}.zip \
     && unzip pocketbase_${PB_VERSION}_linux_${ARCH}.zip \
     && rm pocketbase_${PB_VERSION}_linux_${ARCH}.zip \
