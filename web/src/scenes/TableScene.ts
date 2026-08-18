@@ -372,7 +372,6 @@ export class TableScene {
     const winnerRanks = this.game.winner_ranks || [];
     const currentTurn = this.game.turn_index;
     const lastCombo = this.game.last_combo;
-    const passCount = this.game.pass_count || 0;
 
     // Check if opening move of the game
     this.isOpeningMove =
@@ -412,8 +411,8 @@ export class TableScene {
         sv.setHasPassed(false);
       } else {
         sv.setRank(null);
-        // Has passed if in current trick and passCount > 0
-        sv.setHasPassed(passCount > 0 && currentTurn !== i && counts[i] > 0);
+        const passedSeats = this.game.passed_seats || [];
+        sv.setHasPassed(passedSeats.includes(i) && counts[i] > 0);
       }
     }
 

@@ -453,6 +453,7 @@ onRecordCreateRequest((e) => {
         var currentTurn = game.getInt("turn_index");
         var leaderIndex = game.getInt("leader_index");
         var passCount = game.getInt("pass_count");
+        var passedSeats = cards.getRecordJSON(game, "passed_seats", []);
         var counts = cards.getRecordJSON(game, "counts", [13, 13, 13, 13]);
         var lastCombo = cards.getRecordJSON(game, "last_combo", null);
         var winnerRanks = cards.getRecordJSON(game, "winner_ranks", []);
@@ -678,28 +679,44 @@ onRecordCreateRequest((e) => {
                 }
             }
 
-            // If game is still active, advance turn to next active player clockwise
+            // If game is still active, advance turn to next eligible player clockwise (skipping passed players)
             if (game.getString("status") === "playing") {
-                var nextTurn = cards.findNextActiveSeat(counts, seatIndex);
-                game.set("turn_index", nextTurn);
+                var nextTurn = cards.findNextTrickSeat(counts, passedSeats, seatIndex, seatIndex);
+                if (nextTurn === -1) {
+                    // All other active players have already passed in this trick: trick ends immediately!
+                    game.set("last_combo", null);
+                    game.set("passed_seats", []);
+                    game.set("pass_count", 0);
+                    if (counts[seatIndex] > 0) {
+                        game.set("turn_index", seatIndex);
+                        game.set("leader_index", seatIndex);
+                    } else {
+                        var clockwiseLeader = cards.findNextActiveSeat(counts, seatIndex);
+                        game.set("turn_index", clockwiseLeader);
+                        game.set("leader_index", clockwiseLeader);
+                    }
+                } else {
+                    game.set("passed_seats", passedSeats);
+                    game.set("turn_index", nextTurn);
+                }
                 game.set("turn_started_at", new Date().toISOString());
             }
 
             $app.save(game);
         } else if (action === "pass") {
+            if (passedSeats.indexOf(seatIndex) === -1) {
+                passedSeats.push(seatIndex);
+            }
             var newPassCount = passCount + 1;
             game.set("pass_count", newPassCount);
 
-            // Count how many players are active (holding cards)
-            var totalActive = 0;
-            for (var act = 0; act < 4; act++) {
-                if (counts[act] > 0) totalActive++;
-            }
+            var trickWinnerSeat = lastCombo ? lastCombo.seat_index : seatIndex;
+            var nextActiveTurn = cards.findNextTrickSeat(counts, passedSeats, seatIndex, trickWinnerSeat);
 
-            // Check if trick is cleared (consecutive passes == totalActive - 1)
-            if (newPassCount >= totalActive - 1) {
-                var trickWinnerSeat = lastCombo ? lastCombo.seat_index : seatIndex;
+            // If no other eligible player remains, trick ends!
+            if (nextActiveTurn === -1) {
                 game.set("last_combo", null);
+                game.set("passed_seats", []);
                 game.set("pass_count", 0);
 
                 // If trick winner still has cards, they lead
@@ -708,13 +725,13 @@ onRecordCreateRequest((e) => {
                     game.set("leader_index", trickWinnerSeat);
                 } else {
                     // Post-shed lead priority: handover to next active player clockwise from winner
-                    var clockwiseLeader = cards.findNextActiveSeat(counts, trickWinnerSeat);
-                    game.set("turn_index", clockwiseLeader);
-                    game.set("leader_index", clockwiseLeader);
+                    var clockwiseLeader2 = cards.findNextActiveSeat(counts, trickWinnerSeat);
+                    game.set("turn_index", clockwiseLeader2);
+                    game.set("leader_index", clockwiseLeader2);
                 }
             } else {
-                // Trick continues: advance turn to next active player clockwise
-                var nextActiveTurn = cards.findNextActiveSeat(counts, seatIndex);
+                // Trick continues: advance turn to next eligible active player clockwise
+                game.set("passed_seats", passedSeats);
                 game.set("turn_index", nextActiveTurn);
             }
 

@@ -985,3 +985,38 @@ export function getBotMove(
 
   return null;
 }
+
+/**
+ * Finds the next active seat clockwise from startSeat that has cards remaining.
+ */
+export function findNextActiveSeat(counts: number[], startSeat: number): number {
+  for (let i = 1; i <= 3; i++) {
+    const s = (startSeat + i) % 4;
+    if (counts && counts[s] > 0) {
+      return s;
+    }
+  }
+  return startSeat;
+}
+
+/**
+ * Finds the next seat clockwise from startSeat that has cards remaining and has NOT passed in the current trick.
+ * If no other eligible player remains, returns -1 (trick ends).
+ */
+export function findNextTrickSeat(
+  counts: number[],
+  passedSeats: number[],
+  startSeat: number,
+  trickWinnerSeat: number
+): number {
+  passedSeats = passedSeats || [];
+  for (let i = 1; i <= 3; i++) {
+    const s = (startSeat + i) % 4;
+    if (s === trickWinnerSeat) continue;
+    if (counts && counts[s] > 0 && !passedSeats.includes(s)) {
+      return s;
+    }
+  }
+  return -1;
+}
+

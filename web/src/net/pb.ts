@@ -54,6 +54,7 @@ export interface GameRecord extends RecordModel {
   leader_index: number;
   last_combo: LastCombo | null;
   pass_count: number;
+  passed_seats?: number[];
   counts: number[];
   turn_started_at: string;
   winner_ranks: number[];

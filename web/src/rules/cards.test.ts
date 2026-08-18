@@ -18,6 +18,7 @@ const jsCardsAdapter = {
     return jsCards.canBeat(n, p);
   },
   decomposeHand: jsCards.decomposeHand,
+  findNextTrickSeat: jsCards.findNextTrickSeat,
   getBotMove: tsCards.getBotMove,
 };
 
@@ -486,6 +487,37 @@ implementations.forEach(({ name, engine }) => {
         expect(partition.length).toBe(5);
         expect(partition[0].cards.length).toBe(5); // Full house
         expect(partition[1].cards.length).toBe(2); // Pair
+      });
+
+      test('findNextTrickSeat: skips players who already passed in the trick', () => {
+        const counts = [10, 8, 5, 12];
+        const fn = engine.findNextTrickSeat || tsCards.findNextTrickSeat;
+
+        // 1. Single pass skip: Seat 0 played, Seat 1 passed -> advances to Seat 2
+        expect(fn(counts, [1], 0, 0)).toBe(2);
+
+        // 2. Multiple pass skip: Seat 1 played, Seat 2 and Seat 3 passed -> wraps around to Seat 0
+        expect(fn(counts, [2, 3], 1, 1)).toBe(0);
+
+        // 3. Trick finish: Seat 0 is trick leader, Seats 1, 2, 3 passed -> returns -1 (trick ends)
+        expect(fn(counts, [1, 2, 3], 3, 0)).toBe(-1);
+
+        // 4. Consecutive skips: Seat 0 played, Seats 1 and 2 passed -> jumps directly to Seat 3
+        expect(fn(counts, [1, 2], 0, 0)).toBe(3);
+
+        // 5. Wrap-around with non-consecutive passed players: Seats 0 and 2 passed, Seat 3 played -> advances to Seat 1
+        expect(fn(counts, [0, 2], 3, 3)).toBe(1);
+
+        // 6. With 1 shedded player (Seat 2 has 0 cards), Seat 1 passed, Seat 0 played -> advances to Seat 3
+        const countsWithWinner = [10, 8, 0, 12];
+        expect(fn(countsWithWinner, [1], 0, 0)).toBe(3);
+
+        // 7. Head-to-Head (2 remaining players, Seats 1 and 3 out): Seat 0 played, Seat 2 passed -> returns -1
+        const countsHeadToHead = [5, 0, 4, 0];
+        expect(fn(countsHeadToHead, [2], 0, 0)).toBe(-1);
+
+        // 8. Head-to-Head turn advance: Seat 0 played, no passes yet -> advances to Seat 2
+        expect(fn(countsHeadToHead, [], 0, 0)).toBe(2);
       });
     });
   });

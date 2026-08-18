@@ -586,6 +586,22 @@ function findNextActiveSeat(counts, startSeat) {
 }
 
 /**
+ * Finds the next seat clockwise from startSeat that has cards remaining and has NOT passed in the current trick.
+ * If no other eligible player remains (everyone passed or shed), returns -1.
+ */
+function findNextTrickSeat(counts, passedSeats, startSeat, trickWinnerSeat) {
+    passedSeats = passedSeats || [];
+    for (var i = 1; i <= 3; i++) {
+        var s = (startSeat + i) % 4;
+        if (s === trickWinnerSeat) continue;
+        if (counts && counts[s] > 0 && passedSeats.indexOf(s) === -1) {
+            return s;
+        }
+    }
+    return -1;
+}
+
+/**
  * Deals a fresh 52-card deck to 4 seats, creates hands records,
  * determines starting player holding 3♦ (code 0), and transitions game to "playing".
  */
@@ -639,6 +655,7 @@ function dealAndStartGame(gameRecord) {
     gameRecord.set("leader_index", startingSeat);
     gameRecord.set("last_combo", null);
     gameRecord.set("pass_count", 0);
+    gameRecord.set("passed_seats", []);
     gameRecord.set("winner_ranks", []);
     gameRecord.set("turn_started_at", new Date().toISOString());
     $app.save(gameRecord);
@@ -663,6 +680,7 @@ if (typeof module !== "undefined" && module.exports) {
         getRecordJSON: getRecordJSON,
         generateRoomCode: generateRoomCode,
         findNextActiveSeat: findNextActiveSeat,
+        findNextTrickSeat: findNextTrickSeat,
         dealAndStartGame: dealAndStartGame
     };
 }
