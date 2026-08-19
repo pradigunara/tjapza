@@ -10,15 +10,17 @@ interface ToastItem {
   id: string;
   message: string;
   type: ToastType;
-  durationMs: number;
+  timerId: ReturnType<typeof setTimeout> | null;
 }
 
-class ToastManager {
+const MAX_VISIBLE_TOASTS = 3;
+
+export class ToastManager {
   private container: HTMLElement | null = null;
   private toasts: ToastItem[] = [];
 
   private ensureContainer(): HTMLElement {
-    if (!this.container) {
+    if (!this.container || !document.body.contains(this.container)) {
       let el = document.getElementById('tjapza-toasts');
       if (!el) {
         el = document.createElement('div');
@@ -39,10 +41,33 @@ class ToastManager {
       return;
     }
 
+    // De-duplicate if identical message is already visible
+    const existing = this.toasts.find((t) => t.message === message && t.type === type);
+    if (existing) {
+      if (existing.timerId) clearTimeout(existing.timerId);
+      existing.timerId = setTimeout(() => {
+        this.dismiss(existing.id);
+      }, durationMs);
+      const existingEl = document.getElementById(existing.id);
+      if (existingEl) {
+        existingEl.classList.remove('fade-out');
+        existingEl.classList.add('visible');
+      }
+      return;
+    }
+
     const container = this.ensureContainer();
+
+    // Enforce max 3 stacks: evict oldest toast(s) immediately if at or above capacity
+    while (this.toasts.length >= MAX_VISIBLE_TOASTS) {
+      const oldest = this.toasts[0];
+      if (oldest) {
+        this.dismissImmediate(oldest.id);
+      }
+    }
+
     const id = 'toast_' + Math.random().toString(36).substring(2, 9);
-    const toast: ToastItem = { id, message, type, durationMs };
-    this.toasts.push(toast);
+    const toastItem: ToastItem = { id, message, type, timerId: null };
 
     const toastEl = document.createElement('div');
     toastEl.id = id;
@@ -65,6 +90,7 @@ class ToastManager {
     `;
 
     container.appendChild(toastEl);
+    this.toasts.push(toastItem);
 
     // Trigger enter animation
     requestAnimationFrame(() => {
@@ -72,20 +98,54 @@ class ToastManager {
     });
 
     // Auto dismiss
-    setTimeout(() => {
+    toastItem.timerId = setTimeout(() => {
       this.dismiss(id);
     }, durationMs);
   }
 
-  public dismiss(id: string): void {
+  public dismissImmediate(id: string): void {
+    const itemIdx = this.toasts.findIndex((t) => t.id === id);
+    if (itemIdx !== -1) {
+      const item = this.toasts[itemIdx];
+      if (item.timerId) clearTimeout(item.timerId);
+      this.toasts.splice(itemIdx, 1);
+    }
     const el = document.getElementById(id);
-    if (!el) return;
+    if (el) {
+      el.remove();
+    }
+  }
+
+  public dismiss(id: string): void {
+    const item = this.toasts.find((t) => t.id === id);
+    if (item && item.timerId) {
+      clearTimeout(item.timerId);
+    }
+    const el = document.getElementById(id);
+    if (!el) {
+      this.toasts = this.toasts.filter((t) => t.id !== id);
+      return;
+    }
     el.classList.remove('visible');
     el.classList.add('fade-out');
     setTimeout(() => {
       el.remove();
       this.toasts = this.toasts.filter((t) => t.id !== id);
     }, 280);
+  }
+
+  public clear(): void {
+    for (const t of this.toasts) {
+      if (t.timerId) clearTimeout(t.timerId);
+    }
+    this.toasts = [];
+    if (this.container) {
+      this.container.innerHTML = '';
+    }
+  }
+
+  public getActiveCount(): number {
+    return this.toasts.length;
   }
 
   public success(msg: string, duration = 3000): void {
