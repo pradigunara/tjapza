@@ -920,11 +920,11 @@ var Trick = class _Trick {
 // src/domain/BotEngine.ts
 var BotEngine = class _BotEngine {
   static decideMove(params) {
-    const { hand, trick, isOpeningMove = false, counts = [13, 13, 13, 13], seatIndex = 0 } = params;
+    const { hand, trick, isOpeningMove = false, counts = [13, 13, 13, 13] } = params;
     if (hand.isEmpty) {
       return { action: "pass", cards: [] };
     }
-    const isEndgame = counts.some((cnt, s) => s !== seatIndex && cnt > 0 && cnt <= 3);
+    const isEndgame = counts.some((cnt) => cnt > 0 && cnt <= 3);
     if (isOpeningMove) {
       return _BotEngine.decideOpeningMove(hand);
     }
@@ -1089,7 +1089,7 @@ var CapsaGame = class _CapsaGame {
   }
   // --- Self-Healing & Deterministic State Reconciliation ---
   static reconcile(game) {
-    var _a, _b;
+    var _a, _b, _c;
     let current = game;
     const reasons = [];
     const maxPasses = 10;
@@ -1109,6 +1109,11 @@ var CapsaGame = class _CapsaGame {
         });
         if (activeSeats.length <= 1) {
           let newWinnerRanks = [...current.winnerRanks];
+          for (let s = 0; s < 4; s++) {
+            if (((_a = current.counts[s]) != null ? _a : 0) === 0 && !newWinnerRanks.includes(s)) {
+              newWinnerRanks.push(s);
+            }
+          }
           if (activeSeats.length === 1 && !newWinnerRanks.includes(activeSeats[0])) {
             newWinnerRanks.push(activeSeats[0]);
           }
@@ -1129,7 +1134,7 @@ var CapsaGame = class _CapsaGame {
         const activeOpponents = activeSeats.filter((s) => s !== trickWinner);
         const allOpponentsPassed = activeOpponents.length > 0 && activeOpponents.every((s) => current.trick.passedSeats.includes(s));
         if (allOpponentsPassed) {
-          const nextLeader = ((_a = current.counts[trickWinner]) != null ? _a : 0) > 0 ? trickWinner : _CapsaGame.findNextActiveSeat(current.counts, trickWinner);
+          const nextLeader = ((_b = current.counts[trickWinner]) != null ? _b : 0) > 0 ? trickWinner : _CapsaGame.findNextActiveSeat(current.counts, trickWinner);
           current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {
             turnIndex: nextLeader,
             leaderIndex: nextLeader,
@@ -1146,7 +1151,7 @@ var CapsaGame = class _CapsaGame {
         reasons.push("Invariant I3 (Fresh Lead Sanitization): Cleared stale pass records on fresh trick");
         passMutated = true;
       }
-      if (current.status === "playing" && ((_b = current.counts[current.turnIndex]) != null ? _b : 0) === 0) {
+      if (current.status === "playing" && ((_c = current.counts[current.turnIndex]) != null ? _c : 0) === 0) {
         const nextActive = _CapsaGame.findNextActiveSeat(current.counts, current.turnIndex);
         const newLeader = current.trick.isFresh ? nextActive : current.leaderIndex;
         current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {

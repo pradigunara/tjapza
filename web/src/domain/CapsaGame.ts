@@ -134,6 +134,13 @@ export class CapsaGame {
         const activeSeats = [0, 1, 2, 3].filter((s) => (current.counts[s] ?? 0) > 0);
         if (activeSeats.length <= 1) {
           let newWinnerRanks = [...current.winnerRanks];
+          // Include any finished seats (0 cards) missing from winnerRanks
+          for (let s = 0; s < 4; s++) {
+            if ((current.counts[s] ?? 0) === 0 && !newWinnerRanks.includes(s)) {
+              newWinnerRanks.push(s);
+            }
+          }
+          // Append the last remaining active seat (4th place)
           if (activeSeats.length === 1 && !newWinnerRanks.includes(activeSeats[0])) {
             newWinnerRanks.push(activeSeats[0]);
           }

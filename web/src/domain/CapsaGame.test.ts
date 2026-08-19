@@ -330,5 +330,293 @@ describe('CapsaGame State Machine & Self-Healing Reconciliation', () => {
       expect(healedGame.turnIndex).toBe(1);
     });
   });
+
+  describe('Scenario A: Player Sheds Last Card & Clockwise Lead Handover', () => {
+    test('Player 0 sheds last card (rank 1), remaining 3 players pass -> trick concludes and hands lead to Seat 1', () => {
+      let game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 0,
+        leaderIndex: 0,
+        counts: [1, 5, 6, 7],
+        winnerRanks: [],
+        trick: Trick.createFresh(0),
+      });
+
+      // 1. Seat 0 plays their last card (single 2♠)
+      game = game.applyPlay([Card.fromString('2♠')], 0);
+      expect(game.counts[0]).toBe(0);
+      expect(game.winnerRanks).toEqual([0]); // Seat 0 took 1st place!
+      expect(game.status).toBe('playing'); // 3 active players remain
+      expect(game.turnIndex).toBe(1); // Turn moved to Seat 1
+      expect(game.trick.trickWinnerSeat).toBe(0);
+
+      // 2. Seat 1 passes
+      game = game.applyPass(1);
+      expect(game.turnIndex).toBe(2);
+      expect(game.trick.hasPlayerPassed(1)).toBe(true);
+
+      // 3. Seat 2 passes
+      game = game.applyPass(2);
+      expect(game.turnIndex).toBe(3);
+      expect(game.trick.hasPlayerPassed(2)).toBe(true);
+
+      // 4. Seat 3 passes -> all active players passed!
+      game = game.applyPass(3);
+
+      // Trick concludes! Lead hands over clockwise from shed winner Seat 0 -> Seat 1 leads
+      expect(game.trick.isFresh).toBe(true);
+      expect(game.turnIndex).toBe(1);
+      expect(game.leaderIndex).toBe(1);
+      expect(game.trick.passedSeats).toEqual([]);
+    });
+
+    test('Player 0 sheds last card, Seat 1 passes, Seat 2 plays higher card, Seat 3 passes -> Seat 2 wins trick', () => {
+      let game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 0,
+        leaderIndex: 0,
+        counts: [1, 5, 6, 7],
+        winnerRanks: [],
+        trick: Trick.createFresh(0),
+      });
+
+      // 1. Seat 0 plays single 4♦ (shedding last card)
+      game = game.applyPlay([Card.fromString('4♦')], 0);
+      expect(game.counts[0]).toBe(0);
+      expect(game.turnIndex).toBe(1);
+
+      // 2. Seat 1 passes
+      game = game.applyPass(1);
+      expect(game.turnIndex).toBe(2);
+
+      // 3. Seat 2 plays 9♠
+      game = game.applyPlay([Card.fromString('9♠')], 2);
+      expect(game.counts[2]).toBe(5);
+      expect(game.turnIndex).toBe(3);
+      expect(game.trick.trickWinnerSeat).toBe(2);
+
+      // 4. Seat 3 passes -> Seat 0 has 0 cards, Seat 1 already passed -> trick concludes immediately to Seat 2!
+      game = game.applyPass(3);
+      expect(game.trick.isFresh).toBe(true);
+      expect(game.turnIndex).toBe(2);
+      expect(game.leaderIndex).toBe(2);
+    });
+  });
+
+  describe('Scenario B: Multi-Play / Pass Game Sequence', () => {
+    test('Seat 0 leads 4, Seat 1 passes, Seat 2 plays 9, Seat 3 passes, Seat 0 plays Ace, Seat 2 passes -> Seat 0 wins', () => {
+      let game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 0,
+        leaderIndex: 0,
+        counts: [8, 8, 8, 8],
+        trick: Trick.createFresh(0),
+      });
+
+      // 1. Seat 0 leads 4♦
+      game = game.applyPlay([Card.fromString('4♦')], 0);
+      expect(game.counts[0]).toBe(7);
+      expect(game.turnIndex).toBe(1);
+
+      // 2. Seat 1 passes
+      game = game.applyPass(1);
+      expect(game.turnIndex).toBe(2);
+
+      // 3. Seat 2 plays 9♠
+      game = game.applyPlay([Card.fromString('9♠')], 2);
+      expect(game.counts[2]).toBe(7);
+      expect(game.turnIndex).toBe(3);
+
+      // 4. Seat 3 passes
+      game = game.applyPass(3);
+      // Turn advances to Seat 0 (Seat 1 skipped because passed)
+      expect(game.turnIndex).toBe(0);
+
+      // 5. Seat 0 plays A♥
+      game = game.applyPlay([Card.fromString('A♥')], 0);
+      expect(game.counts[0]).toBe(6);
+      // Turn advances to Seat 2 (Seat 1 skipped)
+      expect(game.turnIndex).toBe(2);
+
+      // 6. Seat 2 passes -> trick concludes to Seat 0
+      game = game.applyPass(2);
+      expect(game.trick.isFresh).toBe(true);
+      expect(game.turnIndex).toBe(0);
+      expect(game.leaderIndex).toBe(0);
+    });
+  });
+
+  describe('Scenario C: 2-Player Heads-Up Endgame', () => {
+    test('Heads-up: single pass immediately concludes trick to other active player', () => {
+      let game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 2,
+        leaderIndex: 2,
+        counts: [0, 0, 5, 8], // Seats 0 and 1 finished
+        winnerRanks: [0, 1],
+        trick: Trick.createFresh(2),
+      });
+
+      // Seat 2 leads 10♦
+      game = game.applyPlay([Card.fromString('10♦')], 2);
+      expect(game.counts[2]).toBe(4);
+      expect(game.turnIndex).toBe(3);
+
+      // Seat 3 passes -> immediately concludes trick!
+      game = game.applyPass(3);
+      expect(game.trick.isFresh).toBe(true);
+      expect(game.turnIndex).toBe(2);
+      expect(game.leaderIndex).toBe(2);
+    });
+
+    test('Heads-up: counter-play then pass concludes trick to counter-player', () => {
+      let game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 2,
+        leaderIndex: 2,
+        counts: [0, 0, 5, 8],
+        winnerRanks: [0, 1],
+        trick: Trick.createFresh(2),
+      });
+
+      // Seat 2 leads 10♦
+      game = game.applyPlay([Card.fromString('10♦')], 2);
+      expect(game.turnIndex).toBe(3);
+
+      // Seat 3 plays J♠
+      game = game.applyPlay([Card.fromString('J♠')], 3);
+      expect(game.counts[3]).toBe(7);
+      expect(game.turnIndex).toBe(2);
+
+      // Seat 2 passes -> trick concludes to Seat 3
+      game = game.applyPass(2);
+      expect(game.trick.isFresh).toBe(true);
+      expect(game.turnIndex).toBe(3);
+      expect(game.leaderIndex).toBe(3);
+    });
+  });
+
+  describe('Scenario F: Synthetic & Highly Corrupt State Reconciliation', () => {
+    test('Vector 1: Out-of-bounds turnIndex (e.g. 5) is safely healed to next active seat', () => {
+      const corruptGame = new CapsaGame({
+        status: 'playing',
+        turnIndex: 5,
+        leaderIndex: 0,
+        counts: [0, 6, 4, 3],
+        trick: Trick.createFresh(0),
+      });
+
+      const { game: healedGame, healed } = CapsaGame.reconcile(corruptGame);
+      expect(healed).toBe(true);
+      expect(healedGame.turnIndex).toBe(2); // Next active seat clockwise from (5 + 1) % 4 = 2 is 2
+
+      // Strictly idempotent
+      const pass2 = CapsaGame.reconcile(healedGame);
+      expect(pass2.healed).toBe(false);
+      expect(pass2.reasons).toEqual([]);
+    });
+
+    test('Vector 2: Negative turnIndex (-1) is safely healed', () => {
+      const corruptGame = new CapsaGame({
+        status: 'playing',
+        turnIndex: -1,
+        leaderIndex: 0,
+        counts: [3, 4, 5, 6],
+        trick: Trick.createFresh(0),
+      });
+
+      const { game: healedGame, healed } = CapsaGame.reconcile(corruptGame);
+      expect(healed).toBe(true);
+      expect(healedGame.turnIndex).toBe(0);
+
+      // Strictly idempotent
+      const pass2 = CapsaGame.reconcile(healedGame);
+      expect(pass2.healed).toBe(false);
+      expect(pass2.reasons).toEqual([]);
+    });
+
+    test('Vector 3: Multi-corruption (empty seat + stale passedSeats + unfinished endgame)', () => {
+      const corruptGame = new CapsaGame({
+        status: 'playing',
+        turnIndex: 0, // Seat 0 has 0 cards
+        leaderIndex: 0,
+        counts: [0, 0, 0, 5], // 3 players finished, but status still playing!
+        winnerRanks: [1, 0], // missing 3rd and 4th place
+        trick: new Trick({
+          lastCombo: null,
+          leaderSeatIndex: 0,
+          passedSeats: [0, 1, 2],
+          passCount: 3,
+        }),
+      });
+
+      const { game: healedGame, healed } = CapsaGame.reconcile(corruptGame);
+      expect(healed).toBe(true);
+      expect(healedGame.status).toBe('finished');
+      expect(healedGame.winnerRanks).toEqual([1, 0, 2, 3]); // Auto-resolved
+
+      // Strictly idempotent
+      const pass2 = CapsaGame.reconcile(healedGame);
+      expect(pass2.healed).toBe(false);
+      expect(pass2.reasons).toEqual([]);
+    });
+
+    test('Vector 4: 2-player endgame with un-concluded trick after opponent pass', () => {
+      const corruptGame = new CapsaGame({
+        status: 'playing',
+        turnIndex: 3,
+        leaderIndex: 2,
+        counts: [0, 0, 4, 7], // Active seats: 2 and 3
+        winnerRanks: [0, 1],
+        trick: new Trick({
+          lastCombo: CardCombo.evaluate([Card.fromString('Q♠')]),
+          leaderSeatIndex: 2,
+          lastPlaySeatIndex: 2, // Seat 2 played Queen
+          passedSeats: [3], // Seat 3 passed, so all active opponents passed!
+          passCount: 1,
+        }),
+      });
+
+      const { game: healedGame, healed } = CapsaGame.reconcile(corruptGame);
+      expect(healed).toBe(true);
+      expect(healedGame.trick.isFresh).toBe(true);
+      expect(healedGame.turnIndex).toBe(2);
+      expect(healedGame.leaderIndex).toBe(2);
+
+      // Strictly idempotent
+      const pass2 = CapsaGame.reconcile(healedGame);
+      expect(pass2.healed).toBe(false);
+      expect(pass2.reasons).toEqual([]);
+    });
+
+    test('Vector 5: Corrupt opening state with dirty trick and stale pass count', () => {
+      const corruptGame = new CapsaGame({
+        status: 'playing',
+        turnIndex: 0,
+        leaderIndex: 0,
+        counts: [13, 13, 13, 13],
+        winnerRanks: [],
+        trick: new Trick({
+          lastCombo: CardCombo.evaluate([Card.fromString('2♠')]),
+          leaderSeatIndex: 1,
+          passedSeats: [2, 3],
+          passCount: 2,
+        }),
+      });
+
+      const { game: healedGame, healed } = CapsaGame.reconcile(corruptGame);
+      expect(healed).toBe(true);
+      expect(healedGame.isOpeningMove).toBe(true);
+      expect(healedGame.trick.isFresh).toBe(true);
+      expect(healedGame.trick.passedSeats).toEqual([]);
+      expect(healedGame.trick.passCount).toBe(0);
+
+      // Strictly idempotent
+      const pass2 = CapsaGame.reconcile(healedGame);
+      expect(pass2.healed).toBe(false);
+      expect(pass2.reasons).toEqual([]);
+    });
+  });
 });
+
 

@@ -21,14 +21,14 @@ export class BotEngine {
     counts?: number[];
     seatIndex?: number;
   }): BotDecision {
-    const { hand, trick, isOpeningMove = false, counts = [13, 13, 13, 13], seatIndex = 0 } = params;
+    const { hand, trick, isOpeningMove = false, counts = [13, 13, 13, 13] } = params;
 
     if (hand.isEmpty) {
       return { action: 'pass', cards: [] };
     }
 
-    // Check if any opponent is in endgame danger (<= 3 cards left)
-    const isEndgame = counts.some((cnt, s) => s !== seatIndex && cnt > 0 && cnt <= 3);
+    // Check if current player or any opponent is in endgame danger (<= 3 cards left)
+    const isEndgame = counts.some((cnt) => cnt > 0 && cnt <= 3);
 
     // 1. Opening Move of the Game (Must include 3♦)
     if (isOpeningMove) {
