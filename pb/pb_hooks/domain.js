@@ -1076,12 +1076,101 @@ var CapsaGame = class _CapsaGame {
     var _a;
     return Boolean((_a = this.seats[this.turnIndex]) == null ? void 0 : _a.isBot);
   }
-  findNextActiveSeat(fromSeat) {
+  static findNextActiveSeat(counts, fromSeat) {
+    var _a;
     for (let i = 1; i <= 4; i++) {
       const s = (fromSeat + i) % 4;
-      if (this.counts[s] > 0) return s;
+      if (((_a = counts[s]) != null ? _a : 0) > 0) return s;
     }
     return fromSeat;
+  }
+  findNextActiveSeat(fromSeat) {
+    return _CapsaGame.findNextActiveSeat(this.counts, fromSeat);
+  }
+  // --- Self-Healing & Deterministic State Reconciliation ---
+  static reconcile(game) {
+    var _a, _b;
+    let current = game;
+    const reasons = [];
+    const maxPasses = 10;
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let passMutated = false;
+      if (current.counts.length === 4 && current.counts.every((c) => c === 13) && current.winnerRanks.length === 0 && !current.trick.isFresh) {
+        current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {
+          trick: Trick.createFresh(current.leaderIndex)
+        }));
+        reasons.push("Invariant I5 (Opening Guard): Reset non-fresh trick on opening game state");
+        passMutated = true;
+      }
+      if (current.status === "playing") {
+        const activeSeats = [0, 1, 2, 3].filter((s) => {
+          var _a2;
+          return ((_a2 = current.counts[s]) != null ? _a2 : 0) > 0;
+        });
+        if (activeSeats.length <= 1) {
+          let newWinnerRanks = [...current.winnerRanks];
+          if (activeSeats.length === 1 && !newWinnerRanks.includes(activeSeats[0])) {
+            newWinnerRanks.push(activeSeats[0]);
+          }
+          current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {
+            status: "finished",
+            winnerRanks: newWinnerRanks
+          }));
+          reasons.push("Invariant I4 (Endgame Auto-Resolution): Resolved endgame status to finished");
+          passMutated = true;
+        }
+      }
+      if (current.status === "playing" && current.trick.lastCombo !== null) {
+        const activeSeats = [0, 1, 2, 3].filter((s) => {
+          var _a2;
+          return ((_a2 = current.counts[s]) != null ? _a2 : 0) > 0;
+        });
+        const activeCount = activeSeats.length;
+        const trickWinner = current.trick.lastPlaySeatIndex >= 0 ? current.trick.lastPlaySeatIndex : current.leaderIndex;
+        const activeOpponents = activeSeats.filter((s) => s !== trickWinner);
+        const allOpponentsPassed = activeOpponents.length > 0 && activeOpponents.every((s) => current.trick.passedSeats.includes(s));
+        const passCountThresholdMet = current.trick.passedSeats.length >= activeCount - 1;
+        if (allOpponentsPassed || passCountThresholdMet) {
+          const nextLeader = ((_a = current.counts[trickWinner]) != null ? _a : 0) > 0 ? trickWinner : _CapsaGame.findNextActiveSeat(current.counts, trickWinner);
+          current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {
+            turnIndex: nextLeader,
+            leaderIndex: nextLeader,
+            trick: Trick.createFresh(nextLeader)
+          }));
+          reasons.push(`Invariant I2 (Trick Conclusion): Concluded trick, awarded lead to seat ${nextLeader}`);
+          passMutated = true;
+        }
+      }
+      if (current.trick.isFresh && (current.trick.passedSeats.length > 0 || current.trick.passCount > 0)) {
+        current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {
+          trick: Trick.createFresh(current.leaderIndex)
+        }));
+        reasons.push("Invariant I3 (Fresh Lead Sanitization): Cleared stale pass records on fresh trick");
+        passMutated = true;
+      }
+      if (current.status === "playing" && ((_b = current.counts[current.turnIndex]) != null ? _b : 0) === 0) {
+        const nextActive = _CapsaGame.findNextActiveSeat(current.counts, current.turnIndex);
+        const newLeader = current.trick.isFresh ? nextActive : current.leaderIndex;
+        current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {
+          turnIndex: nextActive,
+          leaderIndex: newLeader,
+          trick: current.trick.isFresh ? Trick.createFresh(newLeader) : current.trick
+        }));
+        reasons.push(`Invariant I1 (Active Seat Integrity): Advanced turn from empty seat ${current.turnIndex} to active seat ${nextActive}`);
+        passMutated = true;
+      }
+      if (!passMutated) {
+        break;
+      }
+    }
+    return {
+      game: current,
+      healed: reasons.length > 0,
+      reasons
+    };
+  }
+  reconcile() {
+    return _CapsaGame.reconcile(this);
   }
   // --- Validation ---
   canPlay(cardsInput, seatIndex, handCards) {

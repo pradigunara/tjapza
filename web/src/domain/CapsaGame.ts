@@ -19,6 +19,12 @@ export interface GameMoveResult {
   combo?: CardCombo;
 }
 
+export interface ReconcileResult {
+  game: CapsaGame;
+  healed: boolean;
+  reasons: string[];
+}
+
 /**
  * Pure Domain Capsa Banting Game State Machine (Zero Side Effects).
  */
@@ -86,12 +92,134 @@ export class CapsaGame {
     return Boolean(this.seats[this.turnIndex]?.isBot);
   }
 
-  public findNextActiveSeat(fromSeat: number): number {
+  public static findNextActiveSeat(counts: number[], fromSeat: number): number {
     for (let i = 1; i <= 4; i++) {
       const s = (fromSeat + i) % 4;
-      if (this.counts[s] > 0) return s;
+      if ((counts[s] ?? 0) > 0) return s;
     }
     return fromSeat;
+  }
+
+  public findNextActiveSeat(fromSeat: number): number {
+    return CapsaGame.findNextActiveSeat(this.counts, fromSeat);
+  }
+
+  // --- Self-Healing & Deterministic State Reconciliation ---
+
+  public static reconcile(game: CapsaGame): ReconcileResult {
+    let current = game;
+    const reasons: string[] = [];
+    const maxPasses = 10;
+
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let passMutated = false;
+
+      // Invariant I5 (Opening Guard): If opening game state, ensure trick is fresh
+      if (
+        current.counts.length === 4 &&
+        current.counts.every((c) => c === 13) &&
+        current.winnerRanks.length === 0 &&
+        !current.trick.isFresh
+      ) {
+        current = new CapsaGame({
+          ...current,
+          trick: Trick.createFresh(current.leaderIndex),
+        });
+        reasons.push('Invariant I5 (Opening Guard): Reset non-fresh trick on opening game state');
+        passMutated = true;
+      }
+
+      // Invariant I4 (Endgame Auto-Resolution): If status is playing and <= 1 active seats remain
+      if (current.status === 'playing') {
+        const activeSeats = [0, 1, 2, 3].filter((s) => (current.counts[s] ?? 0) > 0);
+        if (activeSeats.length <= 1) {
+          let newWinnerRanks = [...current.winnerRanks];
+          if (activeSeats.length === 1 && !newWinnerRanks.includes(activeSeats[0])) {
+            newWinnerRanks.push(activeSeats[0]);
+          }
+          current = new CapsaGame({
+            ...current,
+            status: 'finished',
+            winnerRanks: newWinnerRanks,
+          });
+          reasons.push('Invariant I4 (Endgame Auto-Resolution): Resolved endgame status to finished');
+          passMutated = true;
+        }
+      }
+
+      // Invariant I2 (Trick Conclusion): If trick has combo and all active opponents passed or passed seats threshold met
+      if (current.status === 'playing' && current.trick.lastCombo !== null) {
+        const activeSeats = [0, 1, 2, 3].filter((s) => (current.counts[s] ?? 0) > 0);
+        const activeCount = activeSeats.length;
+        const trickWinner =
+          current.trick.lastPlaySeatIndex >= 0
+            ? current.trick.lastPlaySeatIndex
+            : current.leaderIndex;
+        const activeOpponents = activeSeats.filter((s) => s !== trickWinner);
+
+        const allOpponentsPassed =
+          activeOpponents.length > 0 &&
+          activeOpponents.every((s) => current.trick.passedSeats.includes(s));
+        const passCountThresholdMet = current.trick.passedSeats.length >= activeCount - 1;
+
+        if (allOpponentsPassed || passCountThresholdMet) {
+          const nextLeader =
+            (current.counts[trickWinner] ?? 0) > 0
+              ? trickWinner
+              : CapsaGame.findNextActiveSeat(current.counts, trickWinner);
+
+          current = new CapsaGame({
+            ...current,
+            turnIndex: nextLeader,
+            leaderIndex: nextLeader,
+            trick: Trick.createFresh(nextLeader),
+          });
+          reasons.push(`Invariant I2 (Trick Conclusion): Concluded trick, awarded lead to seat ${nextLeader}`);
+          passMutated = true;
+        }
+      }
+
+      // Invariant I3 (Fresh Lead Sanitization): If trick is fresh but contains stale pass records
+      if (
+        current.trick.isFresh &&
+        (current.trick.passedSeats.length > 0 || current.trick.passCount > 0)
+      ) {
+        current = new CapsaGame({
+          ...current,
+          trick: Trick.createFresh(current.leaderIndex),
+        });
+        reasons.push('Invariant I3 (Fresh Lead Sanitization): Cleared stale pass records on fresh trick');
+        passMutated = true;
+      }
+
+      // Invariant I1 (Active Seat Integrity): If status is playing and current turn seat has 0 cards
+      if (current.status === 'playing' && (current.counts[current.turnIndex] ?? 0) === 0) {
+        const nextActive = CapsaGame.findNextActiveSeat(current.counts, current.turnIndex);
+        const newLeader = current.trick.isFresh ? nextActive : current.leaderIndex;
+        current = new CapsaGame({
+          ...current,
+          turnIndex: nextActive,
+          leaderIndex: newLeader,
+          trick: current.trick.isFresh ? Trick.createFresh(newLeader) : current.trick,
+        });
+        reasons.push(`Invariant I1 (Active Seat Integrity): Advanced turn from empty seat ${current.turnIndex} to active seat ${nextActive}`);
+        passMutated = true;
+      }
+
+      if (!passMutated) {
+        break;
+      }
+    }
+
+    return {
+      game: current,
+      healed: reasons.length > 0,
+      reasons,
+    };
+  }
+
+  public reconcile(): ReconcileResult {
+    return CapsaGame.reconcile(this);
   }
 
   // --- Validation ---

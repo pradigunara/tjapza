@@ -210,6 +210,13 @@ routerAdd("POST", "/api/tjapza/room/start", (c) => {
         // Deal cards and transition to playing state
         gameService.dealAndStartGame(game);
 
+        var domainGame = gameService.recordToDomain(game);
+        var rec = domain.CapsaGame.reconcile(domainGame);
+        if (rec.healed) {
+            gameService.applyDomainToRecord(rec.game, game);
+            $app.save(game);
+        }
+
         return c.json(200, {
             game: game
         });
@@ -433,6 +440,13 @@ routerAdd("POST", "/api/tjapza/rematch", (c) => {
         // Deal cards and start playing
         gameService.dealAndStartGame(newGame);
 
+        var domainGame = gameService.recordToDomain(newGame);
+        var rec = domain.CapsaGame.reconcile(domainGame);
+        if (rec.healed) {
+            gameService.applyDomainToRecord(rec.game, newGame);
+            $app.save(newGame);
+        }
+
         return c.json(200, {
             game: newGame,
             seat_index: callingSeatIndex
@@ -463,363 +477,398 @@ onRecordCreateRequest((e) => {
             throw new BadRequestError("Invalid action type: " + action);
         }
 
-        var game = null;
-        try {
-            game = $app.findRecordById("games", gameId);
-        } catch (err) {
-            throw new BadRequestError("Game not found");
-        }
+        var isNoOpTick = false;
 
-        if (game.getString("status") !== "playing") {
-            throw new BadRequestError("Game is not in playing state");
-        }
-
-        var currentTurn = game.getInt("turn_index");
-
-        // If action is tick, automatically sync seatIndex with the authoritative server turn
-        if (action === "tick") {
-            seatIndex = currentTurn;
-            moveRecord.set("seat_index", currentTurn);
-        }
-
-        if (typeof seatIndex !== "number" || seatIndex < 0 || seatIndex > 3) {
-            throw new BadRequestError("Invalid seat_index: " + seatIndex);
-        }
-        var leaderIndex = game.getInt("leader_index");
-        var passCount = game.getInt("pass_count");
-        var passedSeats = domain.parseJSON(game.get("passed_seats"), []);
-        var counts = domain.parseJSON(game.get("counts"), [13, 13, 13, 13]);
-        var lastCombo = domain.parseJSON(game.get("last_combo"), null);
-        var winnerRanks = domain.parseJSON(game.get("winner_ranks"), []);
-        var seats = domain.parseJSON(game.get("seats"), []);
-        var currentSeat = seats[currentTurn];
-        var turnStartedAt = game.getString("turn_started_at");
-
-        if (lastCombo && (!lastCombo.cards || lastCombo.cards.length === 0)) {
-            lastCombo = null;
-        }
-
-        // Defensive guard: If currentTurn player already has 0 cards, auto-advance turn immediately
-        if (counts[currentTurn] === 0) {
-            var autoNext = gameService.findNextActiveSeat(counts, currentTurn);
-            game.set("turn_index", autoNext);
-            if (!lastCombo) {
-                game.set("leader_index", autoNext);
-            }
-            game.set("turn_started_at", new Date().toISOString());
-            $app.save(game);
-            throw new BadRequestError("Seat " + currentTurn + " has finished; advanced turn to seat " + autoNext);
-        }
-
-        var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
-        var currentHandRecord = null;
-
-        // 1. Handle TICK Action (Bot move or turn timer timeout auto-play)
-        if (action === "tick") {
-            var isBotTurn = currentSeat && currentSeat.is_bot === true;
-            var timer = new domain.TurnTimer(turnStartedAt);
-            var isTimeout = !isBotTurn && timer.isExpired();
-
-            if (!isBotTurn && !isTimeout) {
-                throw new BadRequestError("Not a bot turn and human player has not timed out");
+        $app.runInTransaction((txApp) => {
+            var game = null;
+            try {
+                game = txApp.findRecordById("games", gameId);
+            } catch (err) {
+                throw new BadRequestError("Game not found");
             }
 
-            // Fetch hand of current turn player using robust service helper
-            currentHandRecord = gameService.findHandRecord(gameId, currentTurn, currentSeat ? currentSeat.user_id : null);
+            if (game.getString("status") !== "playing") {
+                if (action === "tick") {
+                    isNoOpTick = true;
+                    return;
+                }
+                throw new BadRequestError("Game is not in playing state");
+            }
 
-            if (!currentHandRecord) {
-                // If hand is missing, check if player or game has finished
-                var nextActive = gameService.findNextActiveSeat(counts, currentTurn);
-                if (nextActive !== currentTurn && counts[currentTurn] === 0) {
-                    game.set("turn_index", nextActive);
-                    if (!lastCombo) {
-                        game.set("leader_index", nextActive);
+            // 1. PRE-RECONCILIATION
+            var domainGame = gameService.recordToDomain(game);
+            var preRec = domain.CapsaGame.reconcile(domainGame);
+            if (preRec.healed) {
+                gameService.applyDomainToRecord(preRec.game, game);
+                txApp.save(game);
+                domainGame = preRec.game;
+            }
+
+            if (game.getString("status") !== "playing") {
+                if (action === "tick") {
+                    isNoOpTick = true;
+                    return;
+                }
+                throw new BadRequestError("Game is not in playing state");
+            }
+
+            var currentTurn = game.getInt("turn_index");
+
+            // If action is tick, automatically sync seatIndex with the authoritative server turn
+            if (action === "tick") {
+                seatIndex = currentTurn;
+                moveRecord.set("seat_index", currentTurn);
+            }
+
+            if (typeof seatIndex !== "number" || seatIndex < 0 || seatIndex > 3) {
+                throw new BadRequestError("Invalid seat_index: " + seatIndex);
+            }
+
+            var leaderIndex = game.getInt("leader_index");
+            var passCount = game.getInt("pass_count");
+            var passedSeats = domain.parseJSON(game.get("passed_seats"), []);
+            var counts = domain.parseJSON(game.get("counts"), [13, 13, 13, 13]);
+            var lastCombo = domain.parseJSON(game.get("last_combo"), null);
+            var winnerRanks = domain.parseJSON(game.get("winner_ranks"), []);
+            var seats = domain.parseJSON(game.get("seats"), []);
+            var currentSeat = seats[currentTurn];
+            var turnStartedAt = game.getString("turn_started_at");
+
+            if (lastCombo && (!lastCombo.cards || lastCombo.cards.length === 0)) {
+                lastCombo = null;
+            }
+
+            var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
+            var currentHandRecord = null;
+
+            // 2. Handle TICK Action (Bot move or turn timer timeout auto-play)
+            if (action === "tick") {
+                var isBotTurn = currentSeat && currentSeat.is_bot === true;
+                var timer = new domain.TurnTimer(turnStartedAt);
+                var isTimeout = !isBotTurn && timer.isExpired();
+
+                if (!isBotTurn && !isTimeout) {
+                    // Strictly idempotent no-op: return cleanly without error
+                    isNoOpTick = true;
+                    return;
+                }
+
+                // Fetch hand of current turn player using robust service helper
+                currentHandRecord = gameService.findHandRecord(gameId, currentTurn, currentSeat ? currentSeat.user_id : null, txApp);
+
+                if (!currentHandRecord) {
+                    // If hand is missing, check if player or game has finished
+                    var nextActive = gameService.findNextActiveSeat(counts, currentTurn);
+                    if (nextActive !== currentTurn && counts[currentTurn] === 0) {
+                        game.set("turn_index", nextActive);
+                        if (!lastCombo) {
+                            game.set("leader_index", nextActive);
+                        }
+                        game.set("turn_started_at", new Date().toISOString());
+                        txApp.save(game);
+                        return;
                     }
-                    game.set("turn_started_at", new Date().toISOString());
-                    $app.save(game);
-                    return e.next();
+                    console.error("[TICK_HAND_NOT_FOUND] gameId: " + gameId + " currentTurn: " + currentTurn);
+                    throw new BadRequestError("Hand not found for seat " + currentTurn);
                 }
-                console.error("[TICK_HAND_NOT_FOUND] gameId: " + gameId + " currentTurn: " + currentTurn);
-                throw new BadRequestError("Hand not found for seat " + currentTurn);
+
+                var botHandCards = domain.parseJSON(currentHandRecord.get("cards"), []);
+                var botMove = domain.BotEngine.decideMove({
+                    hand: new domain.Hand(botHandCards),
+                    trick: lastCombo && lastCombo.cards && lastCombo.cards.length > 0
+                        ? new domain.Trick({
+                            lastCombo: domain.CardCombo.evaluate(lastCombo.cards),
+                            leaderSeatIndex: leaderIndex,
+                            passedSeats: passedSeats,
+                            passCount: passCount,
+                            lastPlaySeatIndex: (typeof lastCombo.seat_index === "number") ? lastCombo.seat_index : leaderIndex
+                          })
+                        : domain.Trick.createFresh(currentTurn),
+                    isOpeningMove: isOpeningMove,
+                    counts: counts,
+                    seatIndex: currentTurn
+                });
+
+                action = botMove.action;
+                seatIndex = currentTurn;
+
+                // Prevent bot from ever attempting to pass when leading or opening
+                if (action === "pass" && (!lastCombo || isOpeningMove)) {
+                    if (botHandCards.length > 0) {
+                        action = "play";
+                        var forcedCard = isOpeningMove && botHandCards.indexOf(domain.CARD_3D) !== -1
+                            ? domain.CARD_3D
+                            : botHandCards[0];
+                        cardsPlayed = [forcedCard];
+                    }
+                }
+
+                moveRecord.set("seat_index", currentTurn);
+                moveRecord.set("action", action);
+
+                if (action === "play") {
+                    if (!cardsPlayed || cardsPlayed.length === 0) {
+                        cardsPlayed = botMove.cards.map(function(c) { return typeof c === 'number' ? c : c.code; });
+                    }
+                    moveRecord.set("cards", cardsPlayed);
+                } else {
+                    cardsPlayed = [];
+                    moveRecord.set("cards", []);
+                }
             }
 
-            var botHandCards = domain.parseJSON(currentHandRecord.get("cards"), []);
-            var botMove = domain.BotEngine.decideMove({
-                hand: new domain.Hand(botHandCards),
-                trick: lastCombo && lastCombo.cards?.length > 0
-                    ? new domain.Trick({ lastCombo: domain.CardCombo.evaluate(lastCombo.cards) })
-                    : domain.Trick.createFresh(currentTurn),
-                isOpeningMove: isOpeningMove,
-                counts: counts
-            });
-
-            action = botMove.action;
-            seatIndex = currentTurn;
-
-            // Prevent bot from ever attempting to pass when leading or opening
-            if (action === "pass" && (!lastCombo || isOpeningMove)) {
-                if (botHandCards.length > 0) {
-                    action = "play";
-                    var forcedCard = isOpeningMove && botHandCards.indexOf(domain.CARD_3D) !== -1
-                        ? domain.CARD_3D
-                        : botHandCards[0];
-                    cardsPlayed = [forcedCard];
-                }
-            }
-
-            moveRecord.set("seat_index", currentTurn);
-            moveRecord.set("action", action);
+            // 3. Handle PLAY Action
+            var playedCombo = null;
+            var playerHandRecord = null;
+            var playerHandCards = [];
 
             if (action === "play") {
-                if (!cardsPlayed || cardsPlayed.length === 0) {
-                    cardsPlayed = botMove.cards.map(function(c) { return c.code; });
+                // Validation: verify turn
+                if (seatIndex !== currentTurn) {
+                    throw new BadRequestError("Not your turn to play");
                 }
-                moveRecord.set("cards", cardsPlayed);
-            } else {
-                cardsPlayed = [];
+
+                // If direct human action (not an automated tick), verify authentication matches seat
+                if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
+                    if (currentSeat.user_id !== e.auth.id) {
+                        throw new ForbiddenError("You are not authorized to play for this seat");
+                    }
+                }
+
+                // Fetch player hand
+                if (isAutomatedMove && currentHandRecord) {
+                    playerHandRecord = currentHandRecord;
+                } else {
+                    playerHandRecord = gameService.findHandRecord(gameId, seatIndex, currentSeat ? currentSeat.user_id : (e.auth ? e.auth.id : null), txApp);
+                }
+
+                if (!playerHandRecord) {
+                    console.error("[HAND_NOT_FOUND_DEBUG] gameId: " + gameId + " seatIndex: " + seatIndex + " currentTurn: " + currentTurn + " auth: " + (e.auth ? e.auth.id : "none"));
+                    throw new BadRequestError("Hand record not found");
+                }
+
+                playerHandCards = domain.parseJSON(playerHandRecord.get("cards"), []);
+
+                // Verify player actually holds the played cards
+                if (!Array.isArray(cardsPlayed) || (cardsPlayed.length !== 1 && cardsPlayed.length !== 2 && cardsPlayed.length !== 5)) {
+                    throw new BadRequestError("Invalid number of cards played (must be 1, 2, or 5)");
+                }
+
+                var seenCards = {};
+                for (var c = 0; c < cardsPlayed.length; c++) {
+                    var cardNum = cardsPlayed[c];
+                    if (typeof cardNum !== "number" || cardNum < 0 || cardNum > 51 || Math.floor(cardNum) !== cardNum) {
+                        throw new BadRequestError("Invalid card code: " + cardNum);
+                    }
+                    if (seenCards[cardNum]) {
+                        throw new BadRequestError("Duplicate card submitted in combo: " + cardNum);
+                    }
+                    seenCards[cardNum] = true;
+                    if (playerHandCards.indexOf(cardNum) === -1) {
+                        throw new BadRequestError("Card not in hand: " + cardNum);
+                    }
+                }
+
+                // Opening move check: must include 3 of Diamonds (code 0)
+                if (isOpeningMove && cardsPlayed.indexOf(domain.CARD_3D) === -1) {
+                    throw new BadRequestError("Opening move must include 3 of Diamonds (3♦)");
+                }
+
+                // Evaluate combo using Domain
+                playedCombo = domain.CardCombo.evaluate(cardsPlayed);
+                if (!playedCombo) {
+                    throw new BadRequestError("Invalid card combination");
+                }
+
+                // Check if beats last_combo
+                if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
+                    var targetCombo = domain.CardCombo.evaluate(lastCombo.cards);
+                    if (targetCombo && !playedCombo.canBeat(targetCombo)) {
+                        throw new BadRequestError("Played combination does not beat the current pile");
+                    }
+                }
+
+                // Set combo fields on move record
+                moveRecord.set("combo_type", playedCombo.type);
+                moveRecord.set("combo_power", playedCombo.power);
+                moveRecord.set("cards", domain.Card.sortCodes(cardsPlayed));
+            } else if (action === "pass") {
+                // Validation: verify turn
+                if (seatIndex !== currentTurn) {
+                    throw new BadRequestError("Not your turn to pass");
+                }
+
+                // If direct human action, verify auth
+                if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
+                    if (currentSeat.user_id !== e.auth.id) {
+                        throw new ForbiddenError("You are not authorized to pass for this seat");
+                    }
+                }
+
+                // Cannot pass when leading a trick
+                if (!lastCombo) {
+                    throw new BadRequestError("Cannot pass when leading a trick");
+                }
+
+                // Cannot pass on opening move
+                if (isOpeningMove) {
+                    throw new BadRequestError("Cannot pass on the opening move of the game");
+                }
+
                 moveRecord.set("cards", []);
-            }
-        }
-
-        // 2. Handle PLAY Action
-        var playedCombo = null;
-        var playerHandRecord = null;
-        var playerHandCards = [];
-
-        if (action === "play") {
-            // Validation: verify turn
-            if (seatIndex !== currentTurn) {
-                throw new BadRequestError("Not your turn to play");
-            }
-
-            // If direct human action (not an automated tick), verify authentication matches seat
-            if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
-                if (currentSeat.user_id !== e.auth.id) {
-                    throw new ForbiddenError("You are not authorized to play for this seat");
-                }
-            }
-
-            // Fetch player hand: reuse already fetched record if automated tick, otherwise query service helper
-            if (isAutomatedMove && currentHandRecord) {
-                playerHandRecord = currentHandRecord;
+                moveRecord.set("combo_type", "");
+                moveRecord.set("combo_power", 0);
             } else {
-                playerHandRecord = gameService.findHandRecord(gameId, seatIndex, currentSeat ? currentSeat.user_id : (e.auth ? e.auth.id : null));
+                throw new BadRequestError("Unknown move action: " + action);
             }
 
-            if (!playerHandRecord) {
-                console.error("[HAND_NOT_FOUND_DEBUG] gameId: " + gameId + " seatIndex: " + seatIndex + " currentTurn: " + currentTurn + " auth: " + (e.auth ? e.auth.id : "none"));
-                throw new BadRequestError("Hand record not found");
-            }
+            // ----------------------------------------------------
+            // 4. ATOMIC STATE MUTATIONS
+            // ----------------------------------------------------
 
-            playerHandCards = domain.parseJSON(playerHandRecord.get("cards"), []);
-
-            // Verify player actually holds the played cards
-            if (!Array.isArray(cardsPlayed) || (cardsPlayed.length !== 1 && cardsPlayed.length !== 2 && cardsPlayed.length !== 5)) {
-                throw new BadRequestError("Invalid number of cards played (must be 1, 2, or 5)");
-            }
-
-            var seenCards = {};
-            for (var c = 0; c < cardsPlayed.length; c++) {
-                var cardNum = cardsPlayed[c];
-                if (typeof cardNum !== "number" || cardNum < 0 || cardNum > 51 || Math.floor(cardNum) !== cardNum) {
-                    throw new BadRequestError("Invalid card code: " + cardNum);
-                }
-                if (seenCards[cardNum]) {
-                    throw new BadRequestError("Duplicate card submitted in combo: " + cardNum);
-                }
-                seenCards[cardNum] = true;
-                if (playerHandCards.indexOf(cardNum) === -1) {
-                    throw new BadRequestError("Card not in hand: " + cardNum);
-                }
-            }
-
-            // Opening move check: must include 3 of Diamonds (code 0)
-            if (isOpeningMove && cardsPlayed.indexOf(domain.CARD_3D) === -1) {
-                throw new BadRequestError("Opening move must include 3 of Diamonds (3♦)");
-            }
-
-            // Evaluate combo using Domain
-            playedCombo = domain.CardCombo.evaluate(cardsPlayed);
-            if (!playedCombo) {
-                throw new BadRequestError("Invalid card combination");
-            }
-
-            // Check if beats last_combo
-            if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
-                var targetCombo = domain.CardCombo.evaluate(lastCombo.cards);
-                if (targetCombo && !playedCombo.canBeat(targetCombo)) {
-                    throw new BadRequestError("Played combination does not beat the current pile");
-                }
-            }
-
-            // Set combo fields on move record
-            moveRecord.set("combo_type", playedCombo.type);
-            moveRecord.set("combo_power", playedCombo.power);
-            moveRecord.set("cards", domain.Card.sortCodes(cardsPlayed));
-        } else if (action === "pass") {
-            // Validation: verify turn
-            if (seatIndex !== currentTurn) {
-                throw new BadRequestError("Not your turn to pass");
-            }
-
-            // If direct human action, verify auth
-            if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
-                if (currentSeat.user_id !== e.auth.id) {
-                    throw new ForbiddenError("You are not authorized to pass for this seat");
-                }
-            }
-
-            // Cannot pass when leading a trick
-            if (!lastCombo) {
-                throw new BadRequestError("Cannot pass when leading a trick");
-            }
-
-            // Cannot pass on opening move
-            if (isOpeningMove) {
-                throw new BadRequestError("Cannot pass on the opening move of the game");
-            }
-
-            moveRecord.set("cards", []);
-            moveRecord.set("combo_type", "");
-            moveRecord.set("combo_power", 0);
-        } else {
-            throw new BadRequestError("Unknown move action: " + action);
-        }
-
-        // ----------------------------------------------------
-        // ATOMIC STATE MUTATIONS
-        // ----------------------------------------------------
-
-        if (action === "play") {
-            // 1. Remove cards from hand
-            var remainingCards = playerHandCards.filter(function(card) {
-                return cardsPlayed.indexOf(card) === -1;
-            });
-            playerHandRecord.set("cards", domain.Card.sortCodes(remainingCards));
-            $app.save(playerHandRecord);
-
-            // 2. Update counts and last_combo
-            counts[seatIndex] = remainingCards.length;
-            game.set("counts", counts);
-            game.set("last_combo", {
-                type: playedCombo.type,
-                power: playedCombo.power,
-                cards: domain.Card.sortCodes(cardsPlayed),
-                seat_index: seatIndex
-            });
-            game.set("pass_count", 0);
-
-            // 3. Shedding & Ranking Check
-            if (remainingCards.length === 0) {
-                var playerRank = winnerRanks.length + 1;
-                winnerRanks.push(seatIndex);
-                game.set("winner_ranks", winnerRanks);
-
-                // Record result
-                var resultsColl = $app.findCollectionByNameOrId("results");
-                var resultRec = new Record(resultsColl, {
-                    game_id: game.id,
-                    user_id: (currentSeat && currentSeat.user_id) ? currentSeat.user_id : null,
-                    seat_index: seatIndex,
-                    rank: playerRank,
-                    is_bot: !!(currentSeat && currentSeat.is_bot)
+            if (action === "play") {
+                // 1. Remove cards from hand
+                var remainingCards = playerHandCards.filter(function(card) {
+                    return cardsPlayed.indexOf(card) === -1;
                 });
-                $app.save(resultRec);
+                playerHandRecord.set("cards", domain.Card.sortCodes(remainingCards));
+                txApp.save(playerHandRecord);
 
-                // Count remaining active players
-                var activeSeats = [];
-                for (var a = 0; a < 4; a++) {
-                    if (counts[a] > 0) activeSeats.push(a);
-                }
+                // 2. Update counts and last_combo
+                counts[seatIndex] = remainingCards.length;
+                game.set("counts", counts);
+                game.set("last_combo", {
+                    type: playedCombo.type,
+                    power: playedCombo.power,
+                    cards: domain.Card.sortCodes(cardsPlayed),
+                    seat_index: seatIndex
+                });
+                game.set("pass_count", 0);
 
-                if (activeSeats.length === 1) {
-                    // Game finished! Last remaining player takes 4th place
-                    var lastPlayerSeat = activeSeats[0];
-                    winnerRanks.push(lastPlayerSeat);
+                // 3. Shedding & Ranking Check
+                if (remainingCards.length === 0) {
+                    var playerRank = winnerRanks.length + 1;
+                    winnerRanks.push(seatIndex);
                     game.set("winner_ranks", winnerRanks);
-                    game.set("status", "finished");
 
-                    var lastSeatInfo = seats[lastPlayerSeat];
-                    var lastResult = new Record(resultsColl, {
+                    // Record result
+                    var resultsColl = txApp.findCollectionByNameOrId("results");
+                    var resultRec = new Record(resultsColl, {
                         game_id: game.id,
-                        user_id: (lastSeatInfo && lastSeatInfo.user_id) ? lastSeatInfo.user_id : null,
-                        seat_index: lastPlayerSeat,
-                        rank: 4,
-                        is_bot: !!(lastSeatInfo && lastSeatInfo.is_bot)
+                        user_id: (currentSeat && currentSeat.user_id) ? currentSeat.user_id : null,
+                        seat_index: seatIndex,
+                        rank: playerRank,
+                        is_bot: !!(currentSeat && currentSeat.is_bot)
                     });
-                    $app.save(lastResult);
-                }
-            }
+                    txApp.save(resultRec);
 
-            // If game is still active, advance turn using Trick domain entity
-            if (game.getString("status") === "playing") {
-                var domainTrick = new domain.Trick({
-                    lastCombo: playedCombo,
+                    // Count remaining active players
+                    var activeSeats = [];
+                    for (var a = 0; a < 4; a++) {
+                        if (counts[a] > 0) activeSeats.push(a);
+                    }
+
+                    if (activeSeats.length === 1) {
+                        // Game finished! Last remaining player takes 4th place
+                        var lastPlayerSeat = activeSeats[0];
+                        winnerRanks.push(lastPlayerSeat);
+                        game.set("winner_ranks", winnerRanks);
+                        game.set("status", "finished");
+
+                        var lastSeatInfo = seats[lastPlayerSeat];
+                        var lastResult = new Record(resultsColl, {
+                            game_id: game.id,
+                            user_id: (lastSeatInfo && lastSeatInfo.user_id) ? lastSeatInfo.user_id : null,
+                            seat_index: lastPlayerSeat,
+                            rank: 4,
+                            is_bot: !!(lastSeatInfo && lastSeatInfo.is_bot)
+                        });
+                        txApp.save(lastResult);
+                    }
+                }
+
+                // If game is still active, advance turn using Trick domain entity
+                if (game.getString("status") === "playing") {
+                    var domainTrick = new domain.Trick({
+                        lastCombo: playedCombo,
+                        leaderSeatIndex: leaderIndex,
+                        passedSeats: passedSeats,
+                        lastPlaySeatIndex: seatIndex
+                    });
+
+                    var nextTurn = domainTrick.findNextSeat(counts, seatIndex);
+                    if (nextTurn === -1) {
+                        // All other active players have already passed in this trick: trick ends immediately!
+                        game.set("last_combo", null);
+                        game.set("passed_seats", []);
+                        game.set("pass_count", 0);
+                        if (counts[seatIndex] > 0) {
+                            game.set("turn_index", seatIndex);
+                            game.set("leader_index", seatIndex);
+                        } else {
+                            var clockwiseLeader = gameService.findNextActiveSeat(counts, seatIndex);
+                            game.set("turn_index", clockwiseLeader);
+                            game.set("leader_index", clockwiseLeader);
+                        }
+                    } else {
+                        game.set("passed_seats", passedSeats);
+                        game.set("turn_index", nextTurn);
+                    }
+                    game.set("turn_started_at", new Date().toISOString());
+                }
+            } else if (action === "pass") {
+                if (passedSeats.indexOf(seatIndex) === -1) {
+                    passedSeats.push(seatIndex);
+                }
+                var newPassCount = passCount + 1;
+                game.set("pass_count", newPassCount);
+
+                var trickWinnerSeat = (lastCombo && typeof lastCombo.seat_index === 'number') ? lastCombo.seat_index : seatIndex;
+                var domainTrick2 = new domain.Trick({
+                    lastCombo: lastCombo ? domain.CardCombo.evaluate(lastCombo.cards) : null,
                     leaderSeatIndex: leaderIndex,
                     passedSeats: passedSeats,
-                    trickWinnerSeat: seatIndex
+                    lastPlaySeatIndex: trickWinnerSeat
                 });
 
-                var nextTurn = domainTrick.findNextSeat(counts, seatIndex);
-                if (nextTurn === -1) {
-                    // All other active players have already passed in this trick: trick ends immediately!
+                var nextActiveTurn = domainTrick2.findNextSeat(counts, seatIndex);
+
+                // If no other eligible player remains, trick ends!
+                if (nextActiveTurn === -1) {
                     game.set("last_combo", null);
                     game.set("passed_seats", []);
                     game.set("pass_count", 0);
-                    if (counts[seatIndex] > 0) {
-                        game.set("turn_index", seatIndex);
-                        game.set("leader_index", seatIndex);
+
+                    if (counts[trickWinnerSeat] > 0) {
+                        game.set("turn_index", trickWinnerSeat);
+                        game.set("leader_index", trickWinnerSeat);
                     } else {
-                        var clockwiseLeader = gameService.findNextActiveSeat(counts, seatIndex);
-                        game.set("turn_index", clockwiseLeader);
-                        game.set("leader_index", clockwiseLeader);
+                        var clockwiseLeader2 = gameService.findNextActiveSeat(counts, trickWinnerSeat);
+                        game.set("turn_index", clockwiseLeader2);
+                        game.set("leader_index", clockwiseLeader2);
                     }
                 } else {
                     game.set("passed_seats", passedSeats);
-                    game.set("turn_index", nextTurn);
+                    game.set("turn_index", nextActiveTurn);
                 }
+
                 game.set("turn_started_at", new Date().toISOString());
             }
 
-            $app.save(game);
-        } else if (action === "pass") {
-            if (passedSeats.indexOf(seatIndex) === -1) {
-                passedSeats.push(seatIndex);
-            }
-            var newPassCount = passCount + 1;
-            game.set("pass_count", newPassCount);
-
-            var trickWinnerSeat = lastCombo ? lastCombo.seat_index : seatIndex;
-            var domainTrick2 = new domain.Trick({
-                lastCombo: lastCombo ? domain.CardCombo.evaluate(lastCombo.cards) : null,
-                leaderSeatIndex: leaderIndex,
-                passedSeats: passedSeats,
-                trickWinnerSeat: trickWinnerSeat
-            });
-
-            var nextActiveTurn = domainTrick2.findNextSeat(counts, seatIndex);
-
-            // If no other eligible player remains, trick ends!
-            if (nextActiveTurn === -1) {
-                game.set("last_combo", null);
-                game.set("passed_seats", []);
-                game.set("pass_count", 0);
-
-                if (counts[trickWinnerSeat] > 0) {
-                    game.set("turn_index", trickWinnerSeat);
-                    game.set("leader_index", trickWinnerSeat);
-                } else {
-                    var clockwiseLeader2 = gameService.findNextActiveSeat(counts, trickWinnerSeat);
-                    game.set("turn_index", clockwiseLeader2);
-                    game.set("leader_index", clockwiseLeader2);
-                }
-            } else {
-                game.set("passed_seats", passedSeats);
-                game.set("turn_index", nextActiveTurn);
+            // 5. POST-RECONCILIATION
+            var postDomainGame = gameService.recordToDomain(game);
+            var postRec = domain.CapsaGame.reconcile(postDomainGame);
+            if (postRec.healed) {
+                gameService.applyDomainToRecord(postRec.game, game);
             }
 
-            game.set("turn_started_at", new Date().toISOString());
-            $app.save(game);
+            txApp.save(game);
+        });
+
+        if (isNoOpTick) {
+            moveRecord.set("cards", []);
+            moveRecord.set("combo_type", "");
+            moveRecord.set("combo_power", 0);
         }
 
         return e.next();
