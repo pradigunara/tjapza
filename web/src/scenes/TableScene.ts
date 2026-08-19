@@ -150,6 +150,7 @@ export class TableScene {
           onMoveCreated: (move: MoveRecord) => this.handleMoveCreated(move),
           onHandUpdate: (cards: number[]) => {
             this.handCards = cards;
+            this.controller.setLocalHand(cards);
             this.handFan.setCards(cards);
             this.updateHudActionState();
           },
@@ -178,6 +179,7 @@ export class TableScene {
             const hand = await fetchPlayerHand(this.game.id, this.localSeatIndex);
             if (JSON.stringify(hand) !== JSON.stringify(this.handCards)) {
               this.handCards = hand;
+              this.controller.setLocalHand(hand);
               this.handFan.setCards(hand);
               this.updateHudActionState();
             }
@@ -397,19 +399,20 @@ export class TableScene {
     }
 
     this.controller.updateGameFromDto(game);
-    this.applyGameState();
 
     if (wasWaiting && game.status === 'waiting' && prevHost !== nextHost && nextHost === this.localSeatIndex) {
       toast.info('You are now the room host 👑');
     }
 
-    if (wasWaiting && game.status === 'playing') {
+    if (game.status === 'playing' && (wasWaiting || this.handCards.length === 0)) {
       this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
       this.controller.setLocalHand(this.handCards);
       this.handFan.setCards(this.handCards);
       this.renderHud();
       sound.playDeal();
     }
+
+    this.applyGameState();
 
     if (game.status === 'playing') {
       const currentTurnSeat = game.seats?.[game.turn_index];
@@ -727,10 +730,19 @@ export class TableScene {
         toast.info('Starting game with bots…');
         const res = await startGame(this.game.id);
         this.game = res.game;
+        this.controller.updateGameFromDto(this.game);
         this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
+        this.controller.setLocalHand(this.handCards);
         this.handFan.setCards(this.handCards);
         this.renderHud();
         this.applyGameState();
+        sound.playDeal();
+        if (this.game.status === 'playing') {
+          const currentTurnSeat = this.game.seats?.[this.game.turn_index];
+          if (currentTurnSeat?.is_bot) {
+            this.heartbeat?.triggerImmediate(900);
+          }
+        }
       } catch (err: any) {
         toast.error(err?.message || 'Failed to start game');
       }

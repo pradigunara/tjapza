@@ -142,6 +142,9 @@ export class GameHeartbeat {
             this.hasPendingNextTick = false;
             this.triggerImmediate(500);
           }
+        } else if (this.hasPendingNextTick) {
+          this.hasPendingNextTick = false;
+          this.triggerImmediate(800);
         }
       }
     }

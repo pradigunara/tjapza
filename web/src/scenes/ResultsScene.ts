@@ -75,7 +75,7 @@ export class ResultsScene {
             toast.info('Rematch started! Entering table…');
             try {
               const res = await joinRoom(rematchId);
-              this.callbacks.onRematchStarted(res.game, this.localSeatIndex);
+              this.callbacks.onRematchStarted(res.game, res.seat_index !== undefined ? res.seat_index : this.localSeatIndex);
             } catch (err: any) {
               console.error('Failed to auto-join rematch:', err);
             }
