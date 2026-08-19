@@ -105,7 +105,9 @@ export class LobbyScene {
             <div class="lobby-card card-quickplay">
               <div class="card-glow"></div>
               <div class="card-body">
-                <div class="card-icon">⚡</div>
+                <div class="card-icon-wrap">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                </div>
                 <h2 class="card-title">Quick Match</h2>
                 <p class="card-desc">Jump straight into a 4-player game. Bots will auto-fill any empty seats after 12s.</p>
                 <button id="btn-quick-play" class="btn-primary btn-gold btn-lg ${this.isLoading ? 'loading' : ''}">
@@ -117,7 +119,9 @@ export class LobbyScene {
             <!-- 2. Create Private Room -->
             <div class="lobby-card card-create">
               <div class="card-body">
-                <div class="card-icon">👑</div>
+                <div class="card-icon-wrap">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 13L2 9z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></svg>
+                </div>
                 <h2 class="card-title">Create Room</h2>
                 <p class="card-desc">Generate a private 6-character room code to invite friends, or start with bots.</p>
                 <button id="btn-create-room" class="btn-secondary btn-lg">
@@ -129,7 +133,9 @@ export class LobbyScene {
             <!-- 3. Join with Code -->
             <div class="lobby-card card-join">
               <div class="card-body">
-                <div class="card-icon">🎟️</div>
+                <div class="card-icon-wrap">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
+                </div>
                 <h2 class="card-title">Join Room</h2>
                 <p class="card-desc">Enter a 6-character room code provided by your friend.</p>
                 <div class="join-input-group">

@@ -236,26 +236,36 @@ export class TableScene {
     const isPortrait = this.viewHeight > this.viewWidth;
     const isMobile = this.viewWidth < 640;
 
-    // 1. Draw Table Background Felt & Vignette
+    // 1. Draw Luxury Casino Felt & Tabletop Rail
     this.tableBg.clear();
 
     // Deep luxury dark felt backdrop
     this.tableBg.rect(0, 0, width, height);
-    this.tableBg.fill({ color: 0x05130e });
+    this.tableBg.fill({ color: 0x05120d });
 
     if (isPortrait) {
       // Mobile Portrait: Center table felt with generous spacing
       const tableW = Math.min(width * 0.94, 400);
-      const tableH = Math.min(height * 0.75, 640);
-      const tableRadius = tableW * 0.40;
-      const feltCy = Math.round(height * 0.45);
+      const tableH = Math.min(height * 0.74, 630);
+      const tableRadius = tableW * 0.38;
+      const feltCy = Math.round(height * 0.46);
 
+      // Outer rail bumper (leather/wood)
+      this.tableBg.roundRect(cx - tableW / 2 - 4, feltCy - tableH / 2 - 4, tableW + 8, tableH + 8, tableRadius + 4);
+      this.tableBg.fill({ color: 0x0a1c14 });
+      this.tableBg.stroke({ width: 2, color: 0x143425 });
+
+      // Outer brass trim
       this.tableBg.roundRect(cx - tableW / 2, feltCy - tableH / 2, tableW, tableH, tableRadius);
-      this.tableBg.fill({ color: 0x0a2a1c });
-      this.tableBg.stroke({ width: 3, color: 0xd97706, alpha: 0.75 });
+      this.tableBg.fill({ color: 0x07271a });
+      this.tableBg.stroke({ width: 2, color: 0xd97706, alpha: 0.75 });
+
+      // Inner felt baize ring
+      this.tableBg.roundRect(cx - tableW / 2 + 6, feltCy - tableH / 2 + 6, tableW - 12, tableH - 12, tableRadius - 4);
+      this.tableBg.stroke({ width: 1, color: 0x104d33, alpha: 0.6 });
 
       // 2. Position Seats in Top-Arc Layout below sleek top bar
-      const topArcY = Math.max(96, height * 0.12);
+      const topArcY = Math.max(105, height * 0.125);
 
       for (let i = 0; i < 4; i++) {
         const sv = this.seatViews[i];
@@ -268,7 +278,7 @@ export class TableScene {
           // Left Opponent
           sv.visible = true;
           sv.layoutForPosition('top_arc');
-          sv.position.set(width * 0.18, topArcY + 18);
+          sv.position.set(width * 0.18, topArcY + 16);
         } else if (relPos === 2) {
           // Center Top Opponent
           sv.visible = true;
@@ -278,14 +288,19 @@ export class TableScene {
           // Right Opponent
           sv.visible = true;
           sv.layoutForPosition('top_arc');
-          sv.position.set(width * 0.82, topArcY + 18);
+          sv.position.set(width * 0.82, topArcY + 16);
         }
       }
 
       // 3. Position Center Pile comfortably above HandFan
-      const pileY = Math.round(height * 0.40);
-      this.tableBg.circle(cx, pileY, tableW * 0.25);
-      this.tableBg.stroke({ width: 1, color: 0x15803d, alpha: 0.35 });
+      const pileY = Math.round(height * 0.41);
+      this.tableBg.circle(cx, pileY, tableW * 0.26);
+      this.tableBg.fill({ color: 0x093020, alpha: 0.5 });
+      this.tableBg.stroke({ width: 1.2, color: 0x15803d, alpha: 0.35 });
+
+      // Inner dashed accent ring
+      this.tableBg.circle(cx, pileY, tableW * 0.24);
+      this.tableBg.stroke({ width: 0.8, color: 0xd97706, alpha: 0.25 });
 
       this.pileView.position.set(cx, pileY);
       this.handFan.resize(width, height);
@@ -295,12 +310,28 @@ export class TableScene {
       const tableH = Math.min(height * 0.88, 740);
       const tableRadius = Math.min(tableW, tableH) * 0.28;
 
-      this.tableBg.roundRect(cx - tableW / 2, cy - tableH / 2, tableW, tableH, tableRadius);
-      this.tableBg.fill({ color: 0x0a2a1c });
-      this.tableBg.stroke({ width: 4, color: 0xd97706, alpha: 0.8 });
+      // Outer rail bumper
+      this.tableBg.roundRect(cx - tableW / 2 - 6, cy - tableH / 2 - 6, tableW + 12, tableH + 12, tableRadius + 4);
+      this.tableBg.fill({ color: 0x0a1c14 });
+      this.tableBg.stroke({ width: 2, color: 0x143425 });
 
-      this.tableBg.circle(cx, cy, Math.min(tableW, tableH) * 0.24);
-      this.tableBg.stroke({ width: 1, color: 0x15803d, alpha: 0.35 });
+      // Brass rail trim
+      this.tableBg.roundRect(cx - tableW / 2, cy - tableH / 2, tableW, tableH, tableRadius);
+      this.tableBg.fill({ color: 0x07271a });
+      this.tableBg.stroke({ width: 3, color: 0xd97706, alpha: 0.8 });
+
+      // Inner baize border
+      this.tableBg.roundRect(cx - tableW / 2 + 8, cy - tableH / 2 + 8, tableW - 16, tableH - 16, tableRadius - 6);
+      this.tableBg.stroke({ width: 1, color: 0x104d33, alpha: 0.5 });
+
+      // Center Trick Area Watermark
+      const centerR = Math.min(tableW, tableH) * 0.24;
+      this.tableBg.circle(cx, cy, centerR);
+      this.tableBg.fill({ color: 0x093020, alpha: 0.5 });
+      this.tableBg.stroke({ width: 1.2, color: 0x15803d, alpha: 0.35 });
+
+      this.tableBg.circle(cx, cy, centerR - 6);
+      this.tableBg.stroke({ width: 0.8, color: 0xd97706, alpha: 0.25 });
 
       const seatMarginX = isMobile ? 35 : 70;
       const seatMarginY = isMobile ? 45 : 60;

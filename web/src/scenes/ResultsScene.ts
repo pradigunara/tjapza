@@ -137,7 +137,13 @@ export class ResultsScene {
       <div class="results-backdrop"></div>
       <div class="results-card">
         <div class="results-header">
-          <div class="results-trophy">${isWinner ? '🏆' : '🎮'}</div>
+          <div class="results-trophy-wrap">
+            ${
+              isWinner
+                ? `<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45.98-.98 1.05A6.02 6.02 0 0 1 3.5 12V4h17v8a6.02 6.02 0 0 1-5.52 6.05c-.53-.07-.98-.5-.98-1.05v-2.34"/><path d="M12 2v6"/><path d="M12 17v5"/></svg>`
+                : `<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>`
+            }
+          </div>
           <h2 class="results-title">${isWinner ? 'Victory!' : 'Game Over'}</h2>
           <p class="results-sub">
             ${isWinner ? 'You emptied your hand first and took 1st Place!' : `You finished in ${localRank}${this.getOrdinal(localRank)} Place.`}
@@ -151,8 +157,8 @@ export class ResultsScene {
               const isLocal = p.seatIndex === this.localSeatIndex;
               return `
                 <div class="score-row ${isLocal ? 'score-row-local' : ''} rank-${p.rank}">
-                  <div class="score-rank-badge">${p.medal}</div>
-                  <div class="score-avatar">${p.isBot ? '🤖' : escapeHtml(p.name.charAt(0).toUpperCase())}</div>
+                  <div class="score-rank-badge">${p.rank === 1 ? '★ 1' : `${p.rank}`}</div>
+                  <div class="score-avatar ${p.isBot ? 'is-bot' : ''}">${p.isBot ? 'AI' : escapeHtml(p.name.charAt(0).toUpperCase())}</div>
                   <div class="score-name-col">
                     <span class="score-name">${escapeHtml(p.name)} ${isLocal ? '(You)' : ''}</span>
                     <span class="score-role">${p.isBot ? 'Bot' : 'Player'}</span>
