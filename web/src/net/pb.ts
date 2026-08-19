@@ -315,6 +315,17 @@ export async function fetchResults(gameId: string): Promise<ResultRecord[]> {
   }
 }
 
+export async function fetchMoves(gameId: string): Promise<MoveRecord[]> {
+  try {
+    return await pb.collection('moves').getFullList<MoveRecord>({
+      filter: `game_id = "${gameId}" && action != "tick"`,
+      sort: 'created',
+    });
+  } catch (err) {
+    return [];
+  }
+}
+
 export async function playCards(
   gameId: string,
   seatIndex: number,

@@ -3,6 +3,7 @@ import {
   GameHeartbeat,
   getCurrentUser,
   fetchGame,
+  fetchMoves,
   fetchPlayerHand,
   playCards,
   passTurn,
@@ -18,6 +19,7 @@ import { PileView } from '../render/PileView';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 import { escapeHtml } from '../ui/escape';
+import { MoveHistoryModal } from '../ui/MoveHistoryModal';
 import {
   Card,
   CardCombo,
@@ -52,10 +54,12 @@ export class TableScene {
 
   // DOM HUD Overlay
   private hudContainer: HTMLElement;
+  private historyModal: MoveHistoryModal = new MoveHistoryModal();
 
   // Game Engine & State
   private handCards: number[] = [];
   private selectedCards: number[] = [];
+  private moves: MoveRecord[] = [];
   private isProcessingMove = false;
   private heartbeat: GameHeartbeat | null = null;
   private unsubscribeMoves?: () => void;
@@ -96,6 +100,9 @@ export class TableScene {
 
     // Center Trick Pile
     this.pileView = new PileView();
+    this.pileView.onPileClick = () => {
+      this.openMoveHistoryModal();
+    };
     this.rootContainer.addChild(this.pileView);
 
     // Player Hand Fan
@@ -129,6 +136,13 @@ export class TableScene {
         this.controller.setLocalSeatIndex(serverSeat);
       }
     }
+
+    // Fetch past moves in this match
+    fetchMoves(this.game.id)
+      .then((m) => {
+        this.moves = m;
+      })
+      .catch(() => {});
 
     this.renderHud();
     this.resize(window.innerWidth, window.innerHeight);
@@ -234,6 +248,7 @@ export class TableScene {
       clearInterval(this.timerInterval);
     }
 
+    this.historyModal.close();
     this.app.stage.removeChild(this.rootContainer);
     this.rootContainer.destroy({ children: true });
     this.hudContainer.remove();
@@ -496,6 +511,13 @@ export class TableScene {
   }
 
   private handleMoveCreated(move: MoveRecord): void {
+    if (move.action !== 'tick') {
+      const exists = this.moves.some((m) => m.id === move.id);
+      if (!exists) {
+        this.moves.push(move);
+      }
+    }
+
     const seats = this.game.seats || [];
     const rawName = seats[move.seat_index]?.name || (seats[move.seat_index]?.is_bot ? 'Bot' : `Seat ${move.seat_index + 1}`);
     const seatName = `${move.seat_index + 1} | ${rawName}`;
@@ -518,6 +540,24 @@ export class TableScene {
       sound.playPass();
       toast.info(`${seatName} passed`);
     }
+  }
+
+  public async openMoveHistoryModal(): Promise<void> {
+    sound.playClick();
+    try {
+      const fresh = await fetchMoves(this.game.id);
+      if (fresh.length >= this.moves.length) {
+        this.moves = fresh;
+      }
+    } catch {}
+
+    this.historyModal.show({
+      container: document.body,
+      roomCode: this.game.room_code,
+      seats: this.game.seats || [],
+      localSeatIndex: this.localSeatIndex,
+      moves: this.moves,
+    });
   }
 
   private applyGameState(): void {
@@ -640,6 +680,10 @@ export class TableScene {
               : ''
           }
 
+          <button id="btn-table-history" class="btn-icon" title="View Move History">
+            <span>📜</span>
+          </button>
+
           <button id="btn-table-sound" class="btn-icon" title="Toggle Sound">
             <span>${sound.isMuted() ? '🔇' : '🔊'}</span>
           </button>
@@ -761,6 +805,12 @@ export class TableScene {
   }
 
   private attachHudEvents(): void {
+    // Move History Modal
+    const btnHistory = this.hudContainer.querySelector('#btn-table-history');
+    btnHistory?.addEventListener('click', () => {
+      this.openMoveHistoryModal();
+    });
+
     // Copy Room Code
     const btnCopy = this.hudContainer.querySelector('#btn-copy-code');
     btnCopy?.addEventListener('click', () => {

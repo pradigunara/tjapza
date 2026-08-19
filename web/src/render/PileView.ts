@@ -1,10 +1,12 @@
-import { Container, Graphics, Text, TextStyle } from 'pixi.js';
+import { Container, Graphics, Rectangle, Text, TextStyle } from 'pixi.js';
 import { CardSprite } from './CardSprite';
 import type { LastCombo } from '../net/pb';
 import { sound } from '../audio/sound';
 import { CardCombo } from '../domain';
 
 export class PileView extends Container {
+  public onPileClick?: () => void;
+
   private cardContainer: Container;
   private bannerContainer: Container;
   private bannerBg: Graphics;
@@ -18,6 +20,25 @@ export class PileView extends Container {
 
   constructor() {
     super();
+
+    this.eventMode = 'static';
+    this.cursor = 'pointer';
+    this.hitArea = new Rectangle(-130, -75, 260, 180);
+
+    this.on('pointertap', (e) => {
+      e.stopPropagation();
+      if (this.onPileClick) {
+        this.onPileClick();
+      }
+    });
+
+    this.on('pointerover', () => {
+      this.bannerContainer.scale.set(1.04);
+    });
+
+    this.on('pointerout', () => {
+      this.bannerContainer.scale.set(1.0);
+    });
 
     this.cardContainer = new Container();
     this.addChild(this.cardContainer);
@@ -96,6 +117,7 @@ export class PileView extends Container {
     for (let i = 0; i < count; i++) {
       const code = cards[i];
       const sprite = new CardSprite(code, true);
+      sprite.eventMode = 'none'; // Display only: parent PileView handles unified interaction
 
       // Subtle natural physical scatter
       const randomAngle = (Math.random() - 0.5) * 0.06;

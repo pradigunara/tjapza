@@ -966,6 +966,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
 }
 
 .modal-card {
@@ -976,6 +977,7 @@ button:disabled {
   width: 90%;
   padding: 1.75rem;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
 }
 
 .modal-card.rules-modal {
@@ -999,6 +1001,12 @@ button:disabled {
   background: transparent;
   color: var(--text-muted);
   font-size: 1.25rem;
+  cursor: pointer;
+  pointer-events: auto;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-close:hover {
@@ -1059,6 +1067,211 @@ button:disabled {
   padding-left: 1.25rem;
   margin-top: 0.25rem;
   margin-bottom: 0.5rem;
+}
+
+/* Move History Modal */
+.modal-card.move-history-card {
+  max-width: 520px;
+  width: 92%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.25rem 1rem 1.25rem;
+}
+
+.history-header-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.history-move-count {
+  background: rgba(51, 65, 85, 0.6);
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  color: var(--gold-300);
+  font-weight: 700;
+}
+
+.move-history-body {
+  margin-bottom: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.move-history-list {
+  max-height: 52vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  padding-right: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  pointer-events: auto;
+}
+
+.move-history-empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--text-muted);
+}
+
+.move-history-empty .empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.move-history-empty p {
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 0.25rem;
+}
+
+.move-history-empty .empty-sub {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.history-trick-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0.6rem 0 0.3rem 0;
+  position: relative;
+}
+
+.history-trick-divider::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: rgba(51, 65, 85, 0.6);
+  z-index: 1;
+}
+
+.history-trick-divider span {
+  position: relative;
+  z-index: 2;
+  background: #0f172a;
+  padding: 0.15rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--gold-400);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(51, 65, 85, 0.4);
+  transition: background 0.15s;
+}
+
+.history-row.is-local-player {
+  border-color: rgba(3, 105, 161, 0.6);
+  background: rgba(12, 74, 110, 0.2);
+}
+
+.history-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.history-move-num {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #64748b;
+  min-width: 22px;
+}
+
+.history-player-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-row-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.history-combo-tag {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--gold-300);
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.5);
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.history-pass-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.history-cards-group {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.mini-card-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  line-height: 1;
+}
+
+.mini-card-chip.card-red {
+  color: #dc2626;
+}
+
+.mini-card-chip.card-black {
+  color: #0f172a;
+}
+
+.mini-card-chip .chip-suit {
+  margin-left: 1px;
+  font-size: 0.8rem;
 }
 
 .btn-oauth-google {
