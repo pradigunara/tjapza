@@ -83,22 +83,21 @@ describe('ToastManager Notification System', () => {
     mockDoc.body.innerHTML = '';
   });
 
-  test('caps visible toasts to a maximum of 3 stacks', () => {
+  test('caps visible toasts to a maximum of 2 stacks', () => {
     tm.show('Message 1', 'info');
     tm.show('Message 2', 'success');
-    tm.show('Message 3', 'warning');
 
-    expect(tm.getActiveCount()).toBe(3);
+    expect(tm.getActiveCount()).toBe(2);
     const container = mockDoc.getElementById('tjapza-toasts');
-    expect(container?.children.length).toBe(3);
+    expect(container?.children.length).toBe(2);
 
-    // Add 4th and 5th toasts
+    // Add 3rd and 4th toasts
+    tm.show('Message 3', 'warning');
     tm.show('Message 4', 'error');
-    tm.show('Message 5', 'info');
 
-    // Count should be strictly capped at 3
-    expect(tm.getActiveCount()).toBe(3);
-    expect(container?.children.length).toBe(3);
+    // Count should be strictly capped at 2
+    expect(tm.getActiveCount()).toBe(2);
+    expect(container?.children.length).toBe(2);
   });
 
   test('deduplicates identical message and type without increasing stack size', () => {

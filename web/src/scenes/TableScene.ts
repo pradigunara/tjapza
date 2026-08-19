@@ -497,7 +497,8 @@ export class TableScene {
 
   private handleMoveCreated(move: MoveRecord): void {
     const seats = this.game.seats || [];
-    const seatName = seats[move.seat_index]?.name || `Seat ${move.seat_index + 1}`;
+    const rawName = seats[move.seat_index]?.name || (seats[move.seat_index]?.is_bot ? 'Bot' : `Seat ${move.seat_index + 1}`);
+    const seatName = `${move.seat_index + 1} | ${rawName}`;
 
     if (move.action === 'play') {
       const sv = this.seatViews[move.seat_index];
@@ -543,7 +544,7 @@ export class TableScene {
       if (sInfo) {
         sv.setPlayerInfo(sInfo.name, sInfo.is_bot, sInfo.connected);
       } else {
-        sv.setPlayerInfo(`Empty Seat ${i + 1}`, false, false);
+        sv.setPlayerInfo('Empty', false, false);
       }
 
       sv.setCardCount(counts[i]);
@@ -563,7 +564,8 @@ export class TableScene {
 
     // Update Pile
     if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
-      const pName = seats[lastCombo.seat_index]?.name;
+      const rawName = seats[lastCombo.seat_index]?.name || (seats[lastCombo.seat_index]?.is_bot ? 'Bot' : `Seat ${lastCombo.seat_index + 1}`);
+      const pName = `${lastCombo.seat_index + 1} | ${rawName}`;
       this.pileView.setCombo(lastCombo, pName);
 
       // Restrict selection to match target combo length (1 for single, 2 for pair, 5 for 5-card combo)

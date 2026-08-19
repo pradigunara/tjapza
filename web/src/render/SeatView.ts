@@ -74,7 +74,7 @@ export class SeatView extends Container {
       fontWeight: '700',
       fill: '#f8fafc',
     });
-    this.nameText = new Text({ text: `Seat ${seatIndex + 1}`, style: nameStyle });
+    this.nameText = new Text({ text: `${seatIndex + 1} | Seat ${seatIndex + 1}`, style: nameStyle });
     this.nameText.anchor.set(0.5, 0.5);
     this.nameContainer.addChild(this.nameText);
     this.addChild(this.nameContainer);
@@ -159,14 +159,16 @@ export class SeatView extends Container {
     avatarChar?: string
   ): void {
     this.isBotPlayer = isBot;
-    const maxLen = this.positionType === 'top_arc' ? 12 : 14;
+    const seatNum = this.seatIndex + 1;
+    const maxLen = this.positionType === 'top_arc' ? 10 : 12;
     let cleanName = name || (isBot ? 'Bot' : 'Player');
 
     if (cleanName.length > maxLen) {
       cleanName = cleanName.substring(0, maxLen - 1) + '…';
     }
 
-    this.nameText.text = isBot ? `${cleanName}` : (connected ? cleanName : `${cleanName} (Off)`);
+    const displayName = isBot ? `${cleanName}` : (connected ? cleanName : `${cleanName} (Off)`);
+    this.nameText.text = `${seatNum} | ${displayName}`;
 
     if (isBot) {
       this.avatarText.visible = false;

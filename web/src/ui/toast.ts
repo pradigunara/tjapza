@@ -13,7 +13,7 @@ interface ToastItem {
   timerId: ReturnType<typeof setTimeout> | null;
 }
 
-const MAX_VISIBLE_TOASTS = 3;
+const MAX_VISIBLE_TOASTS = 2;
 
 export class ToastManager {
   private container: HTMLElement | null = null;
