@@ -89,14 +89,10 @@ routerAdd("POST", "/api/tjapza/room/join", (c) => {
             return c.notFoundError("Room not found or no longer waiting for players");
         }
 
-        if (game.getString("status") !== "waiting") {
-            return c.badRequestError("Game is already in progress or finished");
-        }
-
         var seats = domain.parseJSON(game.get("seats"), []);
         var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
 
-        // Check if user is already seated
+        // Check if user is already seated (e.g. page reload, reconnect, rematch)
         for (var i = 0; i < 4; i++) {
             if (seats[i] && seats[i].user_id === auth.id) {
                 return c.json(200, {
@@ -104,6 +100,10 @@ routerAdd("POST", "/api/tjapza/room/join", (c) => {
                     seat_index: i
                 });
             }
+        }
+
+        if (game.getString("status") !== "waiting") {
+            return c.badRequestError("Game is already in progress or finished");
         }
 
         // Find first empty seat
@@ -165,6 +165,17 @@ routerAdd("POST", "/api/tjapza/room/start", (c) => {
             game = $app.findRecordById("games", gameId);
         } catch (e) {
             return c.notFoundError("Game not found");
+        }
+
+        // Idempotency: if already playing, return current game state
+        if (game.getString("status") === "playing") {
+            return c.json(200, {
+                game: game
+            });
+        }
+
+        if (game.getString("status") !== "waiting") {
+            return c.badRequestError("Game is not in a startable state");
         }
 
         var seats = domain.parseJSON(game.get("seats"), []);
@@ -442,9 +453,11 @@ onRecordCreateRequest((e) => {
         var gameService = require(__hooks + "/game_service.js");
         var moveRecord = e.record;
         var gameId = moveRecord.getString("game_id");
-        var action = moveRecord.getString("action");
+        var originalAction = moveRecord.getString("action");
+        var action = originalAction;
         var seatIndex = moveRecord.getInt("seat_index");
         var cardsPlayed = domain.parseJSON(moveRecord.get("cards"), []);
+        var isAutomatedMove = (originalAction === "tick");
 
         if (action !== "play" && action !== "pass" && action !== "tick") {
             throw new BadRequestError("Invalid action type: " + action);
@@ -499,6 +512,7 @@ onRecordCreateRequest((e) => {
         }
 
         var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
+        var currentHandRecord = null;
 
         // 1. Handle TICK Action (Bot move or turn timer timeout auto-play)
         if (action === "tick") {
@@ -510,21 +524,8 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError("Not a bot turn and human player has not timed out");
             }
 
-            // Fetch hand of current turn player
-            var currentHandRecord = null;
-            try {
-                currentHandRecord = $app.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && seat_index = " + currentTurn);
-            } catch (_) {
-                try {
-                    var botHands = $app.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 10, 0);
-                    for (var hb = 0; hb < botHands.length; hb++) {
-                        if (botHands[hb].getInt("seat_index") === currentTurn) {
-                            currentHandRecord = botHands[hb];
-                            break;
-                        }
-                    }
-                } catch (_) {}
-            }
+            // Fetch hand of current turn player using robust service helper
+            currentHandRecord = gameService.findHandRecord(gameId, currentTurn, currentSeat ? currentSeat.user_id : null);
 
             if (!currentHandRecord) {
                 // If hand is missing, check if player or game has finished
@@ -538,6 +539,7 @@ onRecordCreateRequest((e) => {
                     $app.save(game);
                     return e.next();
                 }
+                console.error("[TICK_HAND_NOT_FOUND] gameId: " + gameId + " currentTurn: " + currentTurn);
                 throw new BadRequestError("Hand not found for seat " + currentTurn);
             }
 
@@ -579,8 +581,6 @@ onRecordCreateRequest((e) => {
             }
         }
 
-        var isTimeoutTick = (moveRecord.getString("action") === "tick" && isTimeout);
-
         // 2. Handle PLAY Action
         var playedCombo = null;
         var playerHandRecord = null;
@@ -592,36 +592,18 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError("Not your turn to play");
             }
 
-            // If direct human action (not a timeout tick), verify authentication matches seat
-            if (!isTimeoutTick && e.auth && currentSeat && !currentSeat.is_bot) {
+            // If direct human action (not an automated tick), verify authentication matches seat
+            if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
                 if (currentSeat.user_id !== e.auth.id) {
                     throw new ForbiddenError("You are not authorized to play for this seat");
                 }
             }
 
-            // Fetch player hand
-            try {
-                playerHandRecord = $app.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && seat_index = " + seatIndex);
-            } catch (_) {
-                try {
-                    if (e.auth) {
-                        playerHandRecord = $app.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && user_id = '" + e.auth.id + "'");
-                    }
-                } catch (_) {}
-            }
-
-            if (!playerHandRecord) {
-                try {
-                    var humanHands = $app.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 50, 0);
-                    for (var hh = 0; hh < humanHands.length; hh++) {
-                        var hSeat = humanHands[hh].getInt("seat_index");
-                        var hUser = humanHands[hh].getString("user_id");
-                        if (hSeat === seatIndex || hSeat === currentTurn || (e.auth && hUser === e.auth.id)) {
-                            playerHandRecord = humanHands[hh];
-                            break;
-                        }
-                    }
-                } catch (_) {}
+            // Fetch player hand: reuse already fetched record if automated tick, otherwise query service helper
+            if (isAutomatedMove && currentHandRecord) {
+                playerHandRecord = currentHandRecord;
+            } else {
+                playerHandRecord = gameService.findHandRecord(gameId, seatIndex, currentSeat ? currentSeat.user_id : (e.auth ? e.auth.id : null));
             }
 
             if (!playerHandRecord) {
@@ -681,7 +663,7 @@ onRecordCreateRequest((e) => {
             }
 
             // If direct human action, verify auth
-            if (!isTimeoutTick && e.auth && currentSeat && !currentSeat.is_bot) {
+            if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
                 if (currentSeat.user_id !== e.auth.id) {
                     throw new ForbiddenError("You are not authorized to pass for this seat");
                 }
@@ -766,14 +748,6 @@ onRecordCreateRequest((e) => {
                         is_bot: !!(lastSeatInfo && lastSeatInfo.is_bot)
                     });
                     $app.save(lastResult);
-
-                    // Ephemeral cleanup: Purge temporary hands for this finished game
-                    try {
-                        var finishedHands = $app.findRecordsByFilter("hands", "game_id = '" + game.id + "'", "-created", 10, 0);
-                        for (var fh = 0; fh < finishedHands.length; fh++) {
-                            $app.delete(finishedHands[fh]);
-                        }
-                    } catch (eHands) {}
                 }
             }
 

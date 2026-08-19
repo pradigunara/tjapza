@@ -22,3 +22,11 @@ dist/
 *.swo
 .vscode/
 .idea/
+*:Zone.Identifier
+
+# Media & Screenshots
+*.png
+*.jpg
+*.jpeg
+*.webp
+

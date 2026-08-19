@@ -292,9 +292,12 @@ export async function fetchGame(gameId: string): Promise<GameRecord> {
 
 export async function fetchPlayerHand(gameId: string, seatIndex: number): Promise<number[]> {
   try {
-    const hand = await pb.collection('hands').getFirstListItem<HandRecord>(
-      `game_id = "${gameId}" && seat_index = ${seatIndex}`
-    );
+    const current = getCurrentUser();
+    let filter = `game_id = "${gameId}" && seat_index = ${seatIndex}`;
+    if (current?.id) {
+      filter = `game_id = "${gameId}" && (seat_index = ${seatIndex} || user_id = "${current.id}")`;
+    }
+    const hand = await pb.collection('hands').getFirstListItem<HandRecord>(filter);
     return hand.cards || [];
   } catch (err) {
     return [];

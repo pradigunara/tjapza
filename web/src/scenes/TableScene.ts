@@ -1,6 +1,7 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import {
   GameHeartbeat,
+  getCurrentUser,
   fetchGame,
   fetchPlayerHand,
   playCards,
@@ -109,6 +110,16 @@ export class TableScene {
   public async mount(parentEl: HTMLElement): Promise<void> {
     this.app.stage.addChild(this.rootContainer);
     parentEl.appendChild(this.hudContainer);
+
+    // Synchronize local seat index with server auth
+    const current = getCurrentUser();
+    if (current?.id && this.game.seats) {
+      const serverSeat = this.game.seats.findIndex((s) => s && s.user_id === current.id);
+      if (serverSeat >= 0 && serverSeat !== this.localSeatIndex) {
+        this.localSeatIndex = serverSeat;
+        this.controller.setLocalSeatIndex(serverSeat);
+      }
+    }
 
     this.renderHud();
     this.resize(window.innerWidth, window.innerHeight);
@@ -343,6 +354,17 @@ export class TableScene {
     const nextHost = this.getHostSeatIndex(game.seats || []);
 
     this.game = game;
+
+    // Synchronize local seat index with server seats if authenticated
+    const current = getCurrentUser();
+    if (current?.id && game.seats) {
+      const serverSeat = game.seats.findIndex((s) => s && s.user_id === current.id);
+      if (serverSeat >= 0 && serverSeat !== this.localSeatIndex) {
+        this.localSeatIndex = serverSeat;
+        this.controller.setLocalSeatIndex(serverSeat);
+      }
+    }
+
     this.controller.updateGameFromDto(game);
     this.applyGameState();
 
