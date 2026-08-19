@@ -72,15 +72,38 @@ export class CardSprite extends Container {
 
     this.on('pointerdown', (e) => {
       e.stopPropagation();
+      if (e.pointerType === 'touch') {
+        this.isHovered = false;
+      }
       this.onCardClick?.(this);
     });
 
-    this.on('pointerover', () => {
+    this.on('pointerover', (e) => {
+      // Ignore hover on touch devices to prevent sticky blue rings on mobile
+      if (e.pointerType === 'touch') return;
+      if (typeof window !== 'undefined' && window.matchMedia && !window.matchMedia('(hover: hover)').matches) return;
       this.isHovered = true;
       this.redrawBase();
     });
 
     this.on('pointerout', () => {
+      this.isHovered = false;
+      this.redrawBase();
+    });
+
+    this.on('pointerup', (e) => {
+      if (e.pointerType === 'touch') {
+        this.isHovered = false;
+        this.redrawBase();
+      }
+    });
+
+    this.on('pointerupoutside', () => {
+      this.isHovered = false;
+      this.redrawBase();
+    });
+
+    this.on('pointercancel', () => {
       this.isHovered = false;
       this.redrawBase();
     });
@@ -121,10 +144,14 @@ export class CardSprite extends Container {
   }
 
   private redrawBase(): void {
+    const isDesktopHover =
+      this.isHovered &&
+      (typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(hover: hover)').matches);
+
     // 1. Realistic Multi-pass Drop Shadow
     this.shadowGraphics.clear();
-    const shadowOffset = this.selected ? 10 : this.isHovered ? 5 : 2.5;
-    const shadowAlpha = this.selected ? 0.45 : this.isHovered ? 0.30 : 0.20;
+    const shadowOffset = this.selected ? 10 : isDesktopHover ? 5 : 2.5;
+    const shadowAlpha = this.selected ? 0.45 : isDesktopHover ? 0.30 : 0.20;
     const blurSpread = this.selected ? 4 : 2;
 
     // Ambient soft blur layer
@@ -169,7 +196,7 @@ export class CardSprite extends Container {
       // Crisp gold inner rim
       this.selectionGlow.roundRect(-1.5, -1.5, CARD_WIDTH + 3, CARD_HEIGHT + 3, CARD_RADIUS + 1.5);
       this.selectionGlow.stroke({ width: 2.5, color: 0xf59e0b, alpha: 0.95 });
-    } else if (this.isHovered && this.faceUp) {
+    } else if (isDesktopHover && this.faceUp) {
       this.selectionGlow.roundRect(-1.5, -1.5, CARD_WIDTH + 3, CARD_HEIGHT + 3, CARD_RADIUS + 1.5);
       this.selectionGlow.stroke({ width: 2, color: 0x38bdf8, alpha: 0.75 });
     }
