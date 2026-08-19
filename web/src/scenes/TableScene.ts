@@ -43,6 +43,9 @@ export class TableScene {
   // Pixi Display Containers
   private rootContainer: Container;
   private tableBg: Graphics;
+  private tableTurnGlow: Graphics;
+  private tablePulseTime = 0;
+  private tableBounds = { x: 0, y: 0, w: 0, h: 0, r: 0 };
   private seatViews: SeatView[] = [];
   private pileView: PileView;
   private handFan: HandFan;
@@ -80,6 +83,9 @@ export class TableScene {
     this.rootContainer = new Container();
     this.tableBg = new Graphics();
     this.rootContainer.addChild(this.tableBg);
+
+    this.tableTurnGlow = new Graphics();
+    this.rootContainer.addChild(this.tableTurnGlow);
 
     // 4 Seats
     for (let i = 0; i < 4; i++) {
@@ -270,6 +276,14 @@ export class TableScene {
       const tableRadius = tableW * 0.38;
       const feltCy = Math.round(height * 0.46);
 
+      this.tableBounds = {
+        x: cx - tableW / 2,
+        y: feltCy - tableH / 2,
+        w: tableW,
+        h: tableH,
+        r: tableRadius,
+      };
+
       // Outer rail bumper (leather/wood)
       this.tableBg.roundRect(cx - tableW / 2 - 4, feltCy - tableH / 2 - 4, tableW + 8, tableH + 8, tableRadius + 4);
       this.tableBg.fill({ color: 0x0a1c14 });
@@ -329,6 +343,14 @@ export class TableScene {
       const tableW = Math.min(width * 0.94, 1140);
       const tableH = Math.min(height * 0.88, 740);
       const tableRadius = Math.min(tableW, tableH) * 0.28;
+
+      this.tableBounds = {
+        x: cx - tableW / 2,
+        y: cy - tableH / 2,
+        w: tableW,
+        h: tableH,
+        r: tableRadius,
+      };
 
       // Outer rail bumper
       this.tableBg.roundRect(cx - tableW / 2 - 6, cy - tableH / 2 - 6, tableW + 12, tableH + 12, tableRadius + 4);
@@ -991,5 +1013,32 @@ export class TableScene {
     }
     this.pileView.update(delta);
     this.handFan.update(delta);
+
+    // Pulse table edge with luxury casino gold glow when it is the local player's turn
+    const isMyTurn =
+      this.game?.status === 'playing' && this.game?.turn_index === this.localSeatIndex;
+
+    if (isMyTurn && this.tableBounds.w > 0) {
+      this.tablePulseTime += 0.08 * delta;
+      const glowAlpha = 0.50 + 0.45 * Math.sin(this.tablePulseTime * 3.5);
+      const { x, y, w, h, r } = this.tableBounds;
+
+      this.tableTurnGlow.clear();
+
+      // 1. Soft outer ambient gold aura expanding beyond bumper
+      this.tableTurnGlow.roundRect(x - 8, y - 8, w + 16, h + 16, r + 6);
+      this.tableTurnGlow.stroke({ width: 4, color: 0xf59e0b, alpha: glowAlpha * 0.35 });
+
+      // 2. High-intensity brass rail edge pulse
+      this.tableTurnGlow.roundRect(x - 1, y - 1, w + 2, h + 2, r + 1);
+      this.tableTurnGlow.stroke({ width: 3.5, color: 0xfbbf24, alpha: glowAlpha * 0.95 });
+
+      // 3. Inner baize accent highlight
+      this.tableTurnGlow.roundRect(x + 6, y + 6, w - 12, h - 12, r - 4);
+      this.tableTurnGlow.stroke({ width: 1.5, color: 0xfde047, alpha: glowAlpha * 0.55 });
+    } else if (this.tablePulseTime !== 0) {
+      this.tablePulseTime = 0;
+      this.tableTurnGlow.clear();
+    }
   }
 }
