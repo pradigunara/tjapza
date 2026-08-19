@@ -50,18 +50,21 @@ tjapza/
 - [Bun](https://bun.sh/) (or Node.js 18+)
 - [PocketBase](https://pocketbase.io/) (v0.25+) binary placed in `pb/pocketbase`
 
-### 2. Install & Build Frontend
+### 2. Live Development (Vite HMR + PocketBase)
+Run the all-in-one development script from the project root:
+```bash
+./dev.sh
+```
+This automatically bundles domain hooks, boots PocketBase on `http://127.0.0.1:8090`, and starts the Vite live dev server on `http://localhost:3000`.
+
+### 3. Production Build & Full-Stack Run
 ```bash
 cd web
-bun install
-bun run build
-```
-
-### 3. Start Backend Server
-```bash
+bun install && bun run build
+cd ..
 ./pb/pocketbase serve
 ```
-Open **`http://127.0.0.1:8090`** in your browser to play immediately!
+Open **`http://127.0.0.1:8090`** in your browser to play!
 
 ---
 

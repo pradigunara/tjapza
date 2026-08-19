@@ -1,5 +1,5 @@
 import { Container } from 'pixi.js';
-import { CardSprite } from './CardSprite';
+import { CardSprite, CARD_WIDTH, CARD_HEIGHT } from './CardSprite';
 import { Card } from '../domain';
 import { sound } from '../audio/sound';
 
@@ -171,10 +171,19 @@ export class HandFan extends Container {
     const isPortrait = this.viewHeight > this.viewWidth;
     const isMobile = this.viewWidth < 640;
     const centerX = this.viewWidth / 2;
-    const sideMargin = isPortrait ? 24 : isMobile ? 32 : 56;
+    const sideMargin = isPortrait ? 3 : isMobile ? 12 : 36;
 
     // Use 2-tier fan on mobile portrait when holding more than 7 cards
     const useTwoTier = isPortrait && count > 7;
+
+    // Calculate vertical positions:
+    // The button bar bottom margin scales with viewport (vh),
+    // but the gap between the cards and the action buttons is strictly FIXED (36px on portrait).
+    const buttonBarBottom = isPortrait
+      ? Math.max(28, Math.round(this.viewHeight * 0.08))
+      : Math.max(16, Math.round(this.viewHeight * 0.04));
+    const buttonBarHeight = isPortrait ? 52 : 48;
+    const fixedGap = isPortrait ? 36 : 28; // Comfortable fixed gap between bottom card edge and button bar
 
     if (useTwoTier) {
       const topCount = Math.ceil(count / 2);
@@ -186,56 +195,53 @@ export class HandFan extends Container {
         this.addChild(this.cardSprites[i]);
       }
 
-      // 1. Top / Back Row (Lower value cards 0..topCount-1)
-      const topScale = 0.80;
-      const topHalfW = (76 * topScale) / 2;
-      const topMaxSpread = Math.max(0, this.viewWidth - 2 * (sideMargin + topHalfW));
-      const topSpread = Math.min(
-        topMaxSpread,
-        topCount * 42 * topScale
-      );
-      const topSpacing = topCount > 1 ? topSpread / (topCount - 1) : 0;
-      const topStartX = centerX - topSpread / 2;
-      const topBaseY = this.viewHeight - 176;
-      const topAngleStep = topCount > 1 ? (0.12 * 2) / (topCount - 1) : 0;
-
-      for (let i = 0; i < topCount; i++) {
-        const sprite = this.cardSprites[i];
-        const t = topCount > 1 ? (i - (topCount - 1) / 2) : 0;
-        const angle = t * topAngleStep;
-        const arcOffset = Math.abs(t) * 1.2;
-
-        sprite.targetX = topStartX + i * topSpacing;
-        sprite.targetY = topBaseY + arcOffset;
-        sprite.targetRotation = angle;
-        sprite.targetScale = topScale;
-        sprite.selectionLift = 18;
-      }
-
       // 2. Bottom / Front Row (Higher value cards topCount..count-1)
-      const bottomScale = 0.84;
-      const bottomHalfW = (76 * bottomScale) / 2;
+      const bottomScale = 0.96;
+      const bottomMaxAngle = 0.08;
+      const bottomHalfW = ((CARD_WIDTH / 2) * Math.cos(bottomMaxAngle) + (CARD_HEIGHT / 2) * Math.sin(bottomMaxAngle)) * bottomScale;
+      const bottomHalfH = (CARD_HEIGHT * bottomScale) / 2;
       const bottomMaxSpread = Math.max(0, this.viewWidth - 2 * (sideMargin + bottomHalfW));
-      const bottomSpread = Math.min(
-        bottomMaxSpread,
-        bottomCount * 46 * bottomScale
-      );
+      const bottomSpread = bottomCount > 1 ? Math.min(bottomMaxSpread, (bottomCount - 1) * 76 * bottomScale) : 0;
       const bottomSpacing = bottomCount > 1 ? bottomSpread / (bottomCount - 1) : 0;
       const bottomStartX = centerX - bottomSpread / 2;
-      const bottomBaseY = this.viewHeight - 110;
-      const bottomAngleStep = bottomCount > 1 ? (0.12 * 2) / (bottomCount - 1) : 0;
+      const bottomBaseY = this.viewHeight - buttonBarBottom - buttonBarHeight - fixedGap - bottomHalfH;
+      const bottomAngleStep = bottomCount > 1 ? (bottomMaxAngle * 2) / (bottomCount - 1) : 0;
 
       for (let j = 0; j < bottomCount; j++) {
         const sprite = this.cardSprites[topCount + j];
         const t = bottomCount > 1 ? (j - (bottomCount - 1) / 2) : 0;
         const angle = t * bottomAngleStep;
-        const arcOffset = Math.abs(t) * 1.2;
+        const arcOffset = Math.abs(t) * 1.0;
 
         sprite.targetX = bottomStartX + j * bottomSpacing;
         sprite.targetY = bottomBaseY + arcOffset;
         sprite.targetRotation = angle;
         sprite.targetScale = bottomScale;
-        sprite.selectionLift = 12; // Modest lift to prevent obscuring upper tier
+        sprite.selectionLift = 16; // Modest lift to prevent obscuring upper tier
+      }
+
+      // 1. Top / Back Row (Lower value cards 0..topCount-1)
+      const topScale = 0.92;
+      const topMaxAngle = 0.08;
+      const topHalfW = ((CARD_WIDTH / 2) * Math.cos(topMaxAngle) + (CARD_HEIGHT / 2) * Math.sin(topMaxAngle)) * topScale;
+      const topMaxSpread = Math.max(0, this.viewWidth - 2 * (sideMargin + topHalfW));
+      const topSpread = topCount > 1 ? Math.min(topMaxSpread, (topCount - 1) * 72 * topScale) : 0;
+      const topSpacing = topCount > 1 ? topSpread / (topCount - 1) : 0;
+      const topStartX = centerX - topSpread / 2;
+      const topBaseY = bottomBaseY - 74; // Proportional tier separation
+      const topAngleStep = topCount > 1 ? (topMaxAngle * 2) / (topCount - 1) : 0;
+
+      for (let i = 0; i < topCount; i++) {
+        const sprite = this.cardSprites[i];
+        const t = topCount > 1 ? (i - (topCount - 1) / 2) : 0;
+        const angle = t * topAngleStep;
+        const arcOffset = Math.abs(t) * 1.0;
+
+        sprite.targetX = topStartX + i * topSpacing;
+        sprite.targetY = topBaseY + arcOffset;
+        sprite.targetRotation = angle;
+        sprite.targetScale = topScale;
+        sprite.selectionLift = 22;
       }
     } else {
       // Single row fan for landscape / desktop or <= 7 cards
@@ -243,32 +249,34 @@ export class HandFan extends Container {
         this.addChild(this.cardSprites[i]);
       }
 
-      const cardScale = isPortrait ? 0.80 : isMobile ? 0.86 : 1.0;
-      const halfW = (76 * cardScale) / 2;
+      const cardScale = isPortrait ? 0.96 : isMobile ? 0.92 : 1.0;
+      const maxAngle = isPortrait ? Math.min(0.12, 0.016 * (count - 1)) : Math.min(0.24, 0.032 * (count - 1));
+      const halfW = ((CARD_WIDTH / 2) * Math.cos(maxAngle) + (CARD_HEIGHT / 2) * Math.sin(maxAngle)) * cardScale;
+      const halfH = (CARD_HEIGHT * cardScale) / 2;
       const maxAllowedSpread = Math.max(0, this.viewWidth - 2 * (sideMargin + halfW));
-      const maxSpread = Math.min(
-        maxAllowedSpread,
-        count * (isPortrait ? 34 : isMobile ? 40 : 48) * cardScale
-      );
+      const maxSpread = count > 1
+        ? Math.min(
+            maxAllowedSpread,
+            (count - 1) * (isPortrait ? 72 : isMobile ? 54 : 60) * cardScale
+          )
+        : 0;
       const cardSpacing = count > 1 ? maxSpread / (count - 1) : 0;
 
-      const baseY = this.viewHeight - (isPortrait ? 110 : isMobile ? 95 : 115);
+      const baseY = this.viewHeight - buttonBarBottom - buttonBarHeight - fixedGap - halfH;
       const startX = centerX - maxSpread / 2;
-
-      const maxAngle = isPortrait ? Math.min(0.16, 0.02 * (count - 1)) : Math.min(0.24, 0.032 * (count - 1));
       const angleStep = count > 1 ? (maxAngle * 2) / (count - 1) : 0;
 
       for (let i = 0; i < count; i++) {
         const sprite = this.cardSprites[i];
         const t = count > 1 ? (i - (count - 1) / 2) : 0;
         const angle = t * angleStep;
-        const arcOffset = Math.abs(t) * (isPortrait ? 1.4 : 2.2);
+        const arcOffset = Math.abs(t) * (isPortrait ? 1.2 : 2.2);
 
         sprite.targetX = startX + i * cardSpacing;
         sprite.targetY = baseY + arcOffset;
         sprite.targetRotation = angle;
         sprite.targetScale = cardScale;
-        sprite.selectionLift = isPortrait ? 18 : 24;
+        sprite.selectionLift = isPortrait ? 22 : 24;
       }
     }
   }

@@ -272,9 +272,9 @@ export class TableScene {
     if (isPortrait) {
       // Mobile Portrait: Center table felt with generous spacing
       const tableW = Math.min(width * 0.94, 400);
-      const tableH = Math.min(height * 0.74, 630);
+      const tableH = Math.min(height * 0.68, 560);
       const tableRadius = tableW * 0.38;
-      const feltCy = Math.round(height * 0.46);
+      const feltCy = Math.round(height * 0.39);
 
       this.tableBounds = {
         x: cx - tableW / 2,
@@ -299,7 +299,7 @@ export class TableScene {
       this.tableBg.stroke({ width: 1, color: 0x104d33, alpha: 0.6 });
 
       // 2. Position Seats in Top-Arc Layout below sleek top bar
-      const topArcY = Math.max(105, height * 0.125);
+      const topArcY = Math.max(88, height * 0.10);
 
       for (let i = 0; i < 4; i++) {
         const sv = this.seatViews[i];
@@ -327,7 +327,7 @@ export class TableScene {
       }
 
       // 3. Position Center Pile comfortably above HandFan
-      const pileY = Math.round(height * 0.41);
+      const pileY = Math.round(height * 0.34);
       this.tableBg.circle(cx, pileY, tableW * 0.26);
       this.tableBg.fill({ color: 0x093020, alpha: 0.5 });
       this.tableBg.stroke({ width: 1.2, color: 0x15803d, alpha: 0.35 });
