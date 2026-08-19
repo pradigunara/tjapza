@@ -147,10 +147,9 @@ export class CapsaGame {
         }
       }
 
-      // Invariant I2 (Trick Conclusion): If trick has combo and all active opponents passed or passed seats threshold met
+      // Invariant I2 (Trick Conclusion): If trick has combo and all active opponents passed
       if (current.status === 'playing' && current.trick.lastCombo !== null) {
         const activeSeats = [0, 1, 2, 3].filter((s) => (current.counts[s] ?? 0) > 0);
-        const activeCount = activeSeats.length;
         const trickWinner =
           current.trick.lastPlaySeatIndex >= 0
             ? current.trick.lastPlaySeatIndex
@@ -160,9 +159,8 @@ export class CapsaGame {
         const allOpponentsPassed =
           activeOpponents.length > 0 &&
           activeOpponents.every((s) => current.trick.passedSeats.includes(s));
-        const passCountThresholdMet = current.trick.passedSeats.length >= activeCount - 1;
 
-        if (allOpponentsPassed || passCountThresholdMet) {
+        if (allOpponentsPassed) {
           const nextLeader =
             (current.counts[trickWinner] ?? 0) > 0
               ? trickWinner

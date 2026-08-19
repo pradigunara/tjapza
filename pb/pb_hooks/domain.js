@@ -1125,12 +1125,10 @@ var CapsaGame = class _CapsaGame {
           var _a2;
           return ((_a2 = current.counts[s]) != null ? _a2 : 0) > 0;
         });
-        const activeCount = activeSeats.length;
         const trickWinner = current.trick.lastPlaySeatIndex >= 0 ? current.trick.lastPlaySeatIndex : current.leaderIndex;
         const activeOpponents = activeSeats.filter((s) => s !== trickWinner);
         const allOpponentsPassed = activeOpponents.length > 0 && activeOpponents.every((s) => current.trick.passedSeats.includes(s));
-        const passCountThresholdMet = current.trick.passedSeats.length >= activeCount - 1;
-        if (allOpponentsPassed || passCountThresholdMet) {
+        if (allOpponentsPassed) {
           const nextLeader = ((_a = current.counts[trickWinner]) != null ? _a : 0) > 0 ? trickWinner : _CapsaGame.findNextActiveSeat(current.counts, trickWinner);
           current = new _CapsaGame(__spreadProps(__spreadValues({}, current), {
             turnIndex: nextLeader,

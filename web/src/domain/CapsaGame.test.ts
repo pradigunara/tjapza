@@ -122,19 +122,43 @@ describe('CapsaGame State Machine & Self-Healing Reconciliation', () => {
       expect(reasons.some((r) => r.includes('Invariant I2'))).toBe(true);
     });
 
-    test('concludes trick when passedSeats.length >= activeCount - 1 threshold is met', () => {
+    test('does NOT conclude trick prematurely when only some active opponents have passed', () => {
+      const combo = CardCombo.evaluate([Card.fromString('2♠')]);
+      const game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 0,
+        leaderIndex: 2,
+        counts: [4, 1, 1, 0], // Active seats: 0, 1, 2. Seat 3 shed.
+        winnerRanks: [3],
+        trick: new Trick({
+          lastCombo: combo,
+          leaderSeatIndex: 2,
+          lastPlaySeatIndex: 2, // Seat 2 (Bot Charlie) played 2♠
+          passedSeats: [3], // Only seat 3 passed/shed, seat 0 and seat 1 are active opponents
+          passCount: 1,
+        }),
+      });
+
+      const { game: healedGame, healed } = CapsaGame.reconcile(game);
+
+      expect(healed).toBe(false);
+      expect(healedGame.trick.isFresh).toBe(false);
+      expect(healedGame.turnIndex).toBe(0); // Turn stays on Seat 0!
+    });
+
+    test('concludes trick when all active opponents have passed', () => {
       const combo = CardCombo.evaluate([Card.fromString('Q♠')]);
       const game = new CapsaGame({
         status: 'playing',
         turnIndex: 2,
         leaderIndex: 2,
-        counts: [5, 4, 3, 0], // 3 active seats (0, 1, 2) -> threshold is 3 - 1 = 2 passes
+        counts: [5, 4, 3, 0], // 3 active seats (0, 1, 2). Trick winner is 2. Opponents are 0, 1.
         winnerRanks: [3],
         trick: new Trick({
           lastCombo: combo,
           leaderSeatIndex: 2,
           lastPlaySeatIndex: 2,
-          passedSeats: [0, 1],
+          passedSeats: [0, 1], // Both active opponents passed
           passCount: 2,
         }),
       });
