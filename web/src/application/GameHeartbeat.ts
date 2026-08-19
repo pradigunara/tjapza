@@ -37,8 +37,10 @@ export class GameHeartbeat {
 
   public start(): void {
     if (this.timer) return;
-    // Continuous background safety poll every 800ms
-    this.timer = window.setInterval(() => this.tick(), 800);
+    // Background safety poll every 3s. Turn changes trigger immediate ticks
+    // via triggerImmediate (SSE-driven); this is only the fallback net, so a
+    // relaxed cadence avoids needless no-op tick requests.
+    this.timer = window.setInterval(() => this.tick(), 3000);
     this.triggerImmediate(300);
   }
 

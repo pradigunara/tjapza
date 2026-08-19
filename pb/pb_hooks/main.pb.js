@@ -74,66 +74,78 @@ routerAdd("POST", "/api/tjapza/room/join", (c) => {
         var roomCode = body.room_code ? domain.RoomCode.clean(body.room_code) : "";
         var gameId = body.game_id ? String(body.game_id).trim() : "";
 
-        var game = null;
-        if (gameId) {
-            try {
-                game = $app.findRecordById("games", gameId);
-            } catch (e) {}
-        } else if (roomCode) {
-            try {
-                game = $app.findFirstRecordByFilter("games", "room_code = '" + roomCode.toUpperCase() + "' && status = 'waiting'");
-            } catch (e) {}
-        }
+        var resultGame = null;
+        var resultSeat = -1;
 
-        if (!game) {
-            return c.notFoundError("Room not found or no longer waiting for players");
-        }
-
-        var seats = domain.parseJSON(game.get("seats"), []);
-        var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
-
-        // Check if user is already seated (e.g. page reload, reconnect, rematch)
-        for (var i = 0; i < 4; i++) {
-            if (seats[i] && seats[i].user_id === auth.id) {
-                return c.json(200, {
-                    game: game,
-                    seat_index: i
-                });
+        // Transactional seat claim: fresh read + re-check inside the tx so
+        // concurrent joins cannot overwrite each other's seat write.
+        $app.runInTransaction(function (txApp) {
+            var game = null;
+            if (gameId) {
+                try {
+                    game = txApp.findRecordById("games", gameId);
+                } catch (e) {}
+            } else if (roomCode) {
+                try {
+                    game = txApp.findFirstRecordByFilter("games", "room_code = '" + roomCode.toUpperCase() + "' && status = 'waiting'");
+                } catch (e) {}
             }
-        }
 
-        if (game.getString("status") !== "waiting") {
-            return c.badRequestError("Game is already in progress or finished");
-        }
-
-        // Find first empty seat
-        var targetSeat = -1;
-        for (var s = 0; s < 4; s++) {
-            if (!seats[s] || (!seats[s].user_id && !seats[s].is_bot)) {
-                targetSeat = s;
-                break;
+            if (!game) {
+                throw new NotFoundError("Room not found or no longer waiting for players");
             }
-        }
 
-        if (targetSeat === -1) {
-            return c.badRequestError("Room is already full");
-        }
+            var seats = domain.parseJSON(game.get("seats"), []);
+            var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
 
-        seats[targetSeat] = {
-            user_id: auth.id,
-            name: displayName,
-            is_bot: false,
-            connected: true
-        };
+            // Check if user is already seated (e.g. page reload, reconnect, rematch)
+            for (var i = 0; i < 4; i++) {
+                if (seats[i] && seats[i].user_id === auth.id) {
+                    resultGame = game;
+                    resultSeat = i;
+                    return;
+                }
+            }
 
-        game.set("seats", seats);
-        $app.save(game);
+            if (game.getString("status") !== "waiting") {
+                throw new BadRequestError("Game is already in progress or finished");
+            }
+
+            // Find first empty seat
+            var targetSeat = -1;
+            for (var s = 0; s < 4; s++) {
+                if (!seats[s] || (!seats[s].user_id && !seats[s].is_bot)) {
+                    targetSeat = s;
+                    break;
+                }
+            }
+
+            if (targetSeat === -1) {
+                throw new BadRequestError("Room is already full");
+            }
+
+            seats[targetSeat] = {
+                user_id: auth.id,
+                name: displayName,
+                is_bot: false,
+                connected: true
+            };
+
+            game.set("seats", seats);
+            txApp.save(game);
+
+            resultGame = game;
+            resultSeat = targetSeat;
+        });
 
         return c.json(200, {
-            game: game,
-            seat_index: targetSeat
+            game: resultGame,
+            seat_index: resultSeat
         });
     } catch (err) {
+        if (err instanceof NotFoundError || err instanceof BadRequestError || err instanceof ForbiddenError) {
+            throw err;
+        }
         console.error("ROOM_JOIN_ERR:", err);
         return c.badRequestError(err.message || String(err));
     }
@@ -160,67 +172,94 @@ routerAdd("POST", "/api/tjapza/room/start", (c) => {
             return c.badRequestError("game_id is required");
         }
 
-        var game = null;
-        try {
-            game = $app.findRecordById("games", gameId);
-        } catch (e) {
-            return c.notFoundError("Game not found");
-        }
+        var resultGame = null;
 
-        // Idempotency: if already playing, return current game state
-        if (game.getString("status") === "playing") {
-            return c.json(200, {
-                game: game
-            });
-        }
-
-        if (game.getString("status") !== "waiting") {
-            return c.badRequestError("Game is not in a startable state");
-        }
-
-        var seats = domain.parseJSON(game.get("seats"), []);
-        var domainRoom = new domain.Room({
-            id: game.id,
-            code: game.getString("room_code"),
-            status: "waiting",
-            seats: seats
-        });
-
-        var hostIndex = domainRoom.hostSeatIndex;
-        if (hostIndex === -1 || !seats[hostIndex] || seats[hostIndex].user_id !== auth.id) {
-            return c.forbiddenError("Only the room host can start the game");
-        }
-
-        // Fill remaining empty slots with bots
-        var botNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta"];
-        for (var i = 0; i < 4; i++) {
-            if (!seats[i] || (!seats[i].user_id && !seats[i].is_bot)) {
-                seats[i] = {
-                    user_id: null,
-                    name: botNames[i] || ("Bot " + (i + 1)),
-                    is_bot: true,
-                    connected: true
-                };
+        // Transactional start: fresh read + status re-check inside the tx so
+        // concurrent starts cannot double-deal and concurrent joins cannot
+        // interleave with the bot fill.
+        $app.runInTransaction(function (txApp) {
+            var game = null;
+            try {
+                game = txApp.findRecordById("games", gameId);
+            } catch (e) {
+                throw new NotFoundError("Game not found");
             }
-        }
 
-        game.set("seats", seats);
-        $app.save(game);
+            // Idempotency: if already playing, return current game state
+            if (game.getString("status") === "playing") {
+                resultGame = game;
+                return;
+            }
 
-        // Deal cards and transition to playing state
-        gameService.dealAndStartGame(game);
+            if (game.getString("status") !== "waiting") {
+                throw new BadRequestError("Game is not in a startable state");
+            }
 
-        var domainGame = gameService.recordToDomain(game);
-        var rec = domain.CapsaGame.reconcile(domainGame);
-        if (rec.healed) {
-            gameService.applyDomainToRecord(rec.game, game);
-            $app.save(game);
-        }
+            var seats = domain.parseJSON(game.get("seats"), []);
+            var domainRoom = new domain.Room({
+                id: game.id,
+                code: game.getString("room_code"),
+                status: "waiting",
+                seats: seats
+            });
+
+            var hostIndex = domainRoom.hostSeatIndex;
+            var isPublicRoom = game.getBool("is_public");
+
+            // Public rooms: any seated human may force-start (matches the
+            // client's 30s "Start with Bots Now" button). Private rooms:
+            // host only.
+            if (isPublicRoom) {
+                var callerSeated = false;
+                for (var ps = 0; ps < 4; ps++) {
+                    if (seats[ps] && seats[ps].user_id === auth.id) {
+                        callerSeated = true;
+                        break;
+                    }
+                }
+                if (!callerSeated) {
+                    throw new ForbiddenError("Only seated players can start this public room");
+                }
+            } else if (hostIndex === -1 || !seats[hostIndex] || seats[hostIndex].user_id !== auth.id) {
+                throw new ForbiddenError("Only the room host can start the game");
+            }
+
+            // Fill remaining empty slots with bots
+            var botNames = ["Bot Alpha", "Bot Bravo", "Bot Charlie", "Bot Delta"];
+            for (var i = 0; i < 4; i++) {
+                if (!seats[i] || (!seats[i].user_id && !seats[i].is_bot)) {
+                    seats[i] = {
+                        user_id: null,
+                        name: botNames[i] || ("Bot " + (i + 1)),
+                        is_bot: true,
+                        connected: true
+                    };
+                }
+            }
+
+            game.set("seats", seats);
+            txApp.save(game);
+
+            // Deal cards and transition to playing state (guards on waiting)
+            gameService.dealAndStartGame(game, txApp);
+
+            var domainGame = gameService.recordToDomain(game);
+            var rec = domain.CapsaGame.reconcile(domainGame);
+            if (rec.healed) {
+                gameService.applyDomainToRecord(rec.game, game);
+                txApp.save(game);
+            }
+
+            resultGame = game;
+        });
 
         return c.json(200, {
-            game: game
+            game: resultGame
         });
     } catch (err) {
+        if (err instanceof NotFoundError || err instanceof BadRequestError || err instanceof ForbiddenError) {
+            throw err;
+        }
         console.error("ROOM_START_ERR:", err);
         return c.badRequestError(err.message || String(err));
     }
@@ -249,48 +288,83 @@ routerAdd("POST", "/api/tjapza/quickplay", (c) => {
 
         for (var i = 0; i < openGames.length; i++) {
             var g = openGames[i];
-            var seats = domain.parseJSON(g.get("seats"), []);
 
-            // Check if user is already in this game
-            for (var s = 0; s < 4; s++) {
-                if (seats[s] && seats[s].user_id === auth.id) {
-                    return c.json(200, {
-                        game: g,
-                        seat_index: s
-                    });
+            var claimedSeat = -1;
+            var alreadySeated = -1;
+            var skipCandidate = false;
+
+            // Transactional seat claim on a fresh read: concurrent quickplay
+            // users cannot claim the same seat or interleave with a start.
+            $app.runInTransaction(function (txApp) {
+                var game = null;
+                try {
+                    game = txApp.findRecordById("games", g.id);
+                } catch (e) {
+                    skipCandidate = true; // vanished concurrently
+                    return;
                 }
-            }
+                g = game;
 
-            // Find empty slot
-            for (var s2 = 0; s2 < 4; s2++) {
-                if (!seats[s2] || (!seats[s2].user_id && !seats[s2].is_bot)) {
-                    seats[s2] = {
-                        user_id: auth.id,
-                        name: displayName,
-                        is_bot: false,
-                        connected: true
-                    };
-                    g.set("seats", seats);
-                    $app.save(g);
+                if (game.getString("status") !== "waiting") {
+                    skipCandidate = true; // started concurrently
+                    return;
+                }
 
-                    // If room is now full (4 humans), start immediately
-                    var humanCount = 0;
-                    for (var h = 0; h < 4; h++) {
-                        if (seats[h] && seats[h].user_id && !seats[h].is_bot) {
-                            humanCount++;
+                var seats = domain.parseJSON(game.get("seats"), []);
+
+                // Check if user is already in this game
+                for (var s = 0; s < 4; s++) {
+                    if (seats[s] && seats[s].user_id === auth.id) {
+                        alreadySeated = s;
+                        return;
+                    }
+                }
+
+                // Find empty slot
+                for (var s2 = 0; s2 < 4; s2++) {
+                    if (!seats[s2] || (!seats[s2].user_id && !seats[s2].is_bot)) {
+                        seats[s2] = {
+                            user_id: auth.id,
+                            name: displayName,
+                            is_bot: false,
+                            connected: true
+                        };
+                        game.set("seats", seats);
+                        txApp.save(game);
+
+                        // If room is now full (4 humans), start immediately
+                        var humanCount = 0;
+                        for (var h = 0; h < 4; h++) {
+                            if (seats[h] && seats[h].user_id && !seats[h].is_bot) {
+                                humanCount++;
+                            }
                         }
-                    }
 
-                    if (humanCount === 4) {
-                        gameService.dealAndStartGame(g);
-                    }
+                        if (humanCount === 4) {
+                            gameService.dealAndStartGame(game, txApp);
+                        }
 
-                    return c.json(200, {
-                        game: g,
-                        seat_index: s2
-                    });
+                        claimedSeat = s2;
+                        return;
+                    }
                 }
+
+                skipCandidate = true; // filled concurrently
+            });
+
+            if (alreadySeated !== -1) {
+                return c.json(200, {
+                    game: g,
+                    seat_index: alreadySeated
+                });
             }
+            if (claimedSeat !== -1) {
+                return c.json(200, {
+                    game: g,
+                    seat_index: claimedSeat
+                });
+            }
+            // skipCandidate: try the next open game
         }
 
         // 2. No open game found: create new public waiting room
@@ -866,9 +940,10 @@ onRecordCreateRequest((e) => {
         });
 
         if (isNoOpTick) {
-            moveRecord.set("cards", []);
-            moveRecord.set("combo_type", "");
-            moveRecord.set("combo_power", 0);
+            // Idempotent no-op: success WITHOUT persistence. Heartbeat polls
+            // would otherwise write ~1-2 inert tick rows per second per game.
+            // Not calling e.next() cancels the record create.
+            return;
         }
 
         return e.next();
@@ -885,33 +960,8 @@ onRecordCreateRequest((e) => {
 // ----------------------------------------------------
 cronAdd("tjapzaEphemeralCleanup", "*/10 * * * *", () => {
     try {
-        // 1. Purge ephemeral moves older than 15 minutes
-        var movesCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-        var oldMoves = $app.findRecordsByFilter("moves", "created < '" + movesCutoff + "'", "-created", 300, 0);
-        for (var m = 0; m < oldMoves.length; m++) {
-            try { $app.delete(oldMoves[m]); } catch (_) {}
-        }
-
-        // 2. Purge ephemeral hands older than 30 minutes
-        var handsCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-        var oldHands = $app.findRecordsByFilter("hands", "created < '" + handsCutoff + "'", "-created", 100, 0);
-        for (var h = 0; h < oldHands.length; h++) {
-            try { $app.delete(oldHands[h]); } catch (_) {}
-        }
-
-        // 3. Purge abandoned waiting games older than 30 minutes
-        var waitingCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-        var abandonedGames = $app.findRecordsByFilter("games", "status = 'waiting' && created < '" + waitingCutoff + "'", "-created", 50, 0);
-        for (var ag = 0; ag < abandonedGames.length; ag++) {
-            try { $app.delete(abandonedGames[ag]); } catch (_) {}
-        }
-
-        // 4. Purge finished games older than 2 hours (results records are preserved for lifetime player statistics)
-        var finishedCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-        var oldFinishedGames = $app.findRecordsByFilter("games", "status = 'finished' && updated < '" + finishedCutoff + "'", "-created", 50, 0);
-        for (var fg = 0; fg < oldFinishedGames.length; fg++) {
-            try { $app.delete(oldFinishedGames[fg]); } catch (_) {}
-        }
+        var gameService = require(__hooks + "/game_service.js");
+        gameService.purgeEphemeralData($app);
     } catch (cronErr) {
         console.error("CRON_CLEANUP_ERROR:", cronErr);
     }

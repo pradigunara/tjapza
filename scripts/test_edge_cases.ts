@@ -135,24 +135,94 @@ async function runEdgeCasesSuite() {
     // TEST 2: Disconnect & Anti-Griefing Human Timeout Protection
     // -------------------------------------------------------------------------
     console.log("\n--- TEST 2: Anti-Griefing & Human Timeout Protection ---");
-    // While it is a human turn, verify a premature tick from another player is rejected
-    if (game.turn_index === 0 || game.turn_index === 1) {
-      let prematureTickRejected = false;
-      try {
-        await pb1.collection("moves").create({
-          game_id: game.id,
-          seat_index: game.turn_index,
-          action: "tick",
-          cards: [],
-        });
-      } catch (err: any) {
-        prematureTickRejected = true;
-        console.log("✅ Anti-Griefing Passed: Premature bot-tick on active human seat strictly rejected (400)");
-      }
-      if (!prematureTickRejected) {
-        throw new Error("SECURITY FAILURE: Host was able to force a premature bot move on a human player!");
-      }
+    // Seat → client map from the actual room seating (Alice seat 0, Bob seat 1)
+    const clientBySeat: Record<number, PocketBase> = {};
+    for (let i = 0; i < 4; i++) {
+      const uid = game.seats[i]?.user_id;
+      if (!uid) continue;
+      if (uid === pb1.authStore.record?.id) clientBySeat[i] = pb1;
+      else if (uid === pb2.authStore.record?.id) clientBySeat[i] = pb2;
     }
+
+    const snap = (g: any) => JSON.stringify({
+      status: g.status,
+      turn_index: g.turn_index,
+      counts: g.counts,
+      last_combo: g.last_combo ?? null,
+      pass_count: g.pass_count ?? 0,
+      passed_seats: g.passed_seats ?? [],
+      turn_started_at: g.turn_started_at,
+    });
+
+    // Step 1 — reach an active human turn (the opener may be a bot). Every bot
+    // tick must resolve AND advance state; this doubles as the bot-stall
+    // regression: a 2xx tick that mutates nothing is a stall.
+    let warmupTicks = 0;
+    while (game.seats[game.turn_index]?.is_bot && warmupTicks < 60) {
+      const pre = snap(game);
+      await pb1.collection("moves").create({
+        game_id: game.id,
+        seat_index: game.turn_index,
+        action: "tick",
+        cards: [],
+      });
+      const next = await pb1.collection("games").getOne(game.id);
+      if (snap(next) === pre) {
+        throw new Error(`STALL: bot tick #${warmupTicks + 1} returned 2xx but state did not advance`);
+      }
+      game = next;
+      warmupTicks++;
+    }
+    if (game.seats[game.turn_index]?.is_bot) {
+      throw new Error("INCONCLUSIVE: bot ticks never reached a human turn (stall!)");
+    }
+    if (game.status !== "playing") {
+      throw new Error("INCONCLUSIVE: game ended before reaching a human turn");
+    }
+    console.log(`✅ Bot turns advanced cleanly after ${warmupTicks} tick(s)`);
+
+    // Step 2 — while it is a human turn, a premature tick from ANOTHER seated
+    // human must be a strict no-op: accepted (idempotent heartbeat), never
+    // mutates game state or the hand, and never persists a move record.
+    const activeSeat = game.turn_index as number;
+    const turnUser = clientBySeat[activeSeat];
+    const otherUser = Object.entries(clientBySeat).find(([s]) => Number(s) !== activeSeat)?.[1];
+    if (!turnUser || !otherUser) {
+      throw new Error("INCONCLUSIVE: expected two seated humans for the no-op probe");
+    }
+    const handBefore = await turnUser.collection("hands").getFirstListItem(
+      `game_id = "${game.id}" && user_id = "${turnUser.authStore.record?.id}"`
+    );
+    const before = snap(game);
+    const movesBefore = await pb1.collection("moves").getFullList({ filter: `game_id = "${game.id}"` });
+
+    const tickResp = await otherUser.collection("moves").create({
+      game_id: game.id,
+      seat_index: activeSeat,
+      action: "tick",
+      cards: [],
+    });
+
+    const afterTick = await pb1.collection("games").getOne(game.id);
+    const handAfter = await turnUser.collection("hands").getFirstListItem(
+      `game_id = "${game.id}" && user_id = "${turnUser.authStore.record?.id}"`
+    );
+    const movesAfter = await pb1.collection("moves").getFullList({ filter: `game_id = "${game.id}"` });
+
+    if (snap(afterTick) !== before) {
+      throw new Error("SECURITY FAILURE: Premature tick mutated an active human's game state!");
+    }
+    if (JSON.stringify(handAfter.cards) !== JSON.stringify(handBefore.cards)) {
+      throw new Error("SECURITY FAILURE: Premature tick mutated an active human's hand!");
+    }
+    // No-op ticks must not persist ANY record (inert or otherwise)
+    if (movesAfter.length !== movesBefore.length) {
+      throw new Error(`SECURITY FAILURE: Premature tick persisted a record (${movesAfter.length - movesBefore.length} new)!`);
+    }
+    if (tickResp && typeof tickResp === "object" && (tickResp.action === "play" || tickResp.action === "pass")) {
+      throw new Error("SECURITY FAILURE: Tick was rewritten into an effective move!");
+    }
+    console.log("✅ Anti-Griefing Passed: Premature bot-tick on active human seat is an idempotent no-op");
 
     // -------------------------------------------------------------------------
     // TEST 3: Host Failover & 2-Human Game Completion to Podium

@@ -153,6 +153,13 @@ function dealAndStartGame(gameRecord, app) {
     var db = app || $app;
     var gId = (gameRecord && gameRecord.id) ? gameRecord.id : (gameRecord.getString ? gameRecord.getString("id") : "");
 
+    // Re-entrancy guard: only ever deal a game that is still waiting. Callers
+    // run inside a transaction; a concurrent start that already flipped the
+    // status must not trigger a second deal (hands would be purged/redealt).
+    if (gameRecord && gameRecord.getString && gameRecord.getString("status") !== "waiting") {
+        return;
+    }
+
     // 1. Purge any stale hand records for this game if re-dealt or retried
     try {
         var existingHands = db.findRecordsByFilter("hands", "game_id = '" + gId + "'", "-created", 50, 0);
@@ -205,10 +212,84 @@ function findNextActiveSeat(counts, startSeat) {
     return startSeat;
 }
 
+/**
+ * Ephemeral data cleanup, invoked by the 10-minute tjapzaEphemeralCleanup
+ * cron in main.pb.js.
+ *
+ * Hands are purged ONLY when their related game is confirmed non-playing
+ * (waiting/finished) or confirmed absent. A game-record lookup that fails
+ * with anything other than NotFoundError is treated as transient: the hand
+ * is kept and retried on the next run. Deleting hands of an active game
+ * bricks both human plays and bot ticks (hand-not-found 400 loops).
+ */
+function purgeEphemeralData(app) {
+    var db = app || $app;
+
+    // 1. Purge ephemeral moves older than 15 minutes
+    // (batch 1000: no-op tick suppression keeps generation low, but the
+    //  purge must never lag behind move creation in long games)
+    var movesCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    var oldMoves = db.findRecordsByFilter("moves", "created < '" + movesCutoff + "'", "-created", 1000, 0);
+    for (var m = 0; m < oldMoves.length; m++) {
+        try { db.delete(oldMoves[m]); } catch (_) {}
+    }
+
+    // 2. Purge ephemeral hands older than 30 minutes — never for playing games
+    var handsCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    var oldHands = db.findRecordsByFilter("hands", "created < '" + handsCutoff + "'", "-created", 100, 0);
+    for (var h = 0; h < oldHands.length; h++) {
+        var hand = oldHands[h];
+
+        var handGameId = "";
+        try { handGameId = hand.getString("game_id") || ""; } catch (_) {}
+
+        // Map the game lookup onto the shared purge-policy contract
+        // (domain.shouldPurgeHand). resolved:false (transient lookup failure)
+        // keeps the hand; it is retried on the next cron run.
+        var resolution;
+        if (!handGameId) {
+            // Dangling relation (game record already deleted)
+            resolution = { resolved: true, status: null };
+        } else {
+            try {
+                var handGame = db.findRecordById("games", handGameId);
+                resolution = { resolved: true, status: handGame.getString("status") };
+            } catch (err) {
+                if (typeof NotFoundError !== "undefined" && err instanceof NotFoundError) {
+                    // Game record confirmed deleted — orphaned hand is purgeable
+                    resolution = { resolved: true, status: null };
+                } else {
+                    resolution = { resolved: false };
+                }
+            }
+        }
+
+        if (!domain.shouldPurgeHand(resolution)) continue;
+
+        try { db.delete(hand); } catch (_) {}
+    }
+
+    // 3. Purge abandoned waiting games older than 30 minutes
+    var waitingCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    var abandonedGames = db.findRecordsByFilter("games", "status = 'waiting' && created < '" + waitingCutoff + "'", "-created", 50, 0);
+    for (var ag = 0; ag < abandonedGames.length; ag++) {
+        try { db.delete(abandonedGames[ag]); } catch (_) {}
+    }
+
+    // 4. Purge finished games older than 2 hours (results records are preserved for lifetime player statistics)
+    var finishedCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    var oldFinishedGames = db.findRecordsByFilter("games", "status = 'finished' && updated < '" + finishedCutoff + "'", "-created", 50, 0);
+    for (var fg = 0; fg < oldFinishedGames.length; fg++) {
+        try { db.delete(oldFinishedGames[fg]); } catch (_) {}
+    }
+}
+
+
 module.exports = {
     dealAndStartGame: dealAndStartGame,
     findNextActiveSeat: findNextActiveSeat,
     findHandRecord: findHandRecord,
     recordToDomain: recordToDomain,
     applyDomainToRecord: applyDomainToRecord,
+    purgeEphemeralData: purgeEphemeralData,
 };

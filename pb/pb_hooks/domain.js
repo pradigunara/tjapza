@@ -77,7 +77,8 @@ __export(index_exports, {
   TURN_TIMEOUT_SECS: () => TURN_TIMEOUT_SECS,
   Trick: () => Trick,
   TurnTimer: () => TurnTimer,
-  parseJSON: () => parseJSON
+  parseJSON: () => parseJSON,
+  shouldPurgeHand: () => shouldPurgeHand
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -1625,3 +1626,14 @@ var Podium = class _Podium {
     return standings;
   }
 };
+
+// src/domain/HandPurgePolicy.ts
+var PURGEABLE_GAME_STATUSES = {
+  waiting: true,
+  finished: true
+};
+function shouldPurgeHand(game) {
+  if (!game.resolved) return false;
+  if (game.status === null) return true;
+  return PURGEABLE_GAME_STATUSES[game.status] === true;
+}

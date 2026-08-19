@@ -25,6 +25,7 @@ import {
   Seat,
   TurnTimer,
   PUBLIC_LOBBY_AUTOSTART_MS,
+  TURN_TIMEOUT_SECS,
 } from '../domain';
 
 export interface TableSceneCallbacks {
@@ -56,6 +57,8 @@ export class TableScene {
   private heartbeat: GameHeartbeat | null = null;
   private unsubscribeMoves?: () => void;
   private lastTurnIndex = -1;
+  private updateSeq = 0;
+  private reconcileTimer?: number;
 
   private timerInterval?: number;
   private tickerCallback?: (ticker: any) => void;
@@ -158,7 +161,6 @@ export class TableScene {
       );
     } catch (err) {
       console.error('Failed to subscribe realtime moves:', err);
-      toast.warning('Realtime sync connecting in polling fallback mode…');
     }
 
     // Start Client-driven Heartbeat
@@ -169,28 +171,40 @@ export class TableScene {
     );
     this.heartbeat.start();
 
-    // Reconcile state immediately when mobile tab becomes visible again
-    this.visibilityHandler = async () => {
-      if (document.visibilityState === 'visible' && this.game?.id) {
-        try {
-          const fresh = await fetchGame(this.game.id);
-          this.handleGameUpdate(fresh);
-          if (fresh.status === 'playing') {
-            const hand = await fetchPlayerHand(this.game.id, this.localSeatIndex);
-            if (JSON.stringify(hand) !== JSON.stringify(this.handCards)) {
-              this.handCards = hand;
-              this.controller.setLocalHand(hand);
-              this.handFan.setCards(hand);
-              this.updateHudActionState();
-            }
-          }
-        } catch (_) {}
+    // Authoritative reconcile poll: heals any missed SSE game update (dead
+    // stream, dropped reconnect) so the client can never stall on a stale turn.
+    this.reconcileTimer = window.setInterval(() => {
+      if (this.game.status !== 'finished') {
+        this.reconcileFromServer();
       }
+    }, 5000);
+
+    // Reconcile state when the tab becomes visible again (missed SSE while
+    // backgrounded), then refresh the local hand — a timeout auto-play may
+    // have changed it while away.
+    this.visibilityHandler = async () => {
+      if (document.visibilityState !== 'visible' || !this.game?.id) return;
+      await this.reconcileFromServer();
+      if (this.game.status !== 'playing') return;
+      const seq = this.updateSeq;
+      try {
+        const hand = await fetchPlayerHand(this.game.id, this.localSeatIndex);
+        if (seq !== this.updateSeq) return; // superseded or unmounted
+        if (JSON.stringify(hand) !== JSON.stringify(this.handCards)) {
+          this.handCards = hand;
+          this.controller.setLocalHand(hand);
+          this.handFan.setCards(hand);
+          this.updateHudActionState();
+        }
+      } catch {}
     };
     document.addEventListener('visibilitychange', this.visibilityHandler);
   }
 
   public unmount(): void {
+    // Invalidate any in-flight update: post-await resumes must not touch
+    // destroyed Pixi containers / HUD nodes.
+    this.updateSeq++;
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
       this.visibilityHandler = undefined;
@@ -198,6 +212,10 @@ export class TableScene {
     if (this.heartbeat) {
       this.heartbeat.stop();
       this.heartbeat = null;
+    }
+    if (this.reconcileTimer) {
+      clearInterval(this.reconcileTimer);
+      this.reconcileTimer = undefined;
     }
     if (this.unsubscribeMoves) {
       this.unsubscribeMoves();
@@ -382,7 +400,19 @@ export class TableScene {
   }
 
   private async handleGameUpdate(game: GameRecord): Promise<void> {
+    // Monotonic guard: ignore snapshots older than (or equal to) the applied one
+    if (
+      this.game?.id === game.id &&
+      this.game.updated &&
+      game.updated &&
+      game.updated <= this.game.updated
+    ) {
+      return;
+    }
+
+    const seq = ++this.updateSeq;
     const wasWaiting = this.game.status === 'waiting';
+    const wasFinished = this.game.status === 'finished';
     const prevHost = this.getHostSeatIndex(this.game.seats || []);
     const nextHost = this.getHostSeatIndex(game.seats || []);
 
@@ -405,9 +435,12 @@ export class TableScene {
     }
 
     if (game.status === 'playing' && (wasWaiting || this.handCards.length === 0)) {
-      this.handCards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
-      this.controller.setLocalHand(this.handCards);
-      this.handFan.setCards(this.handCards);
+      const cards = await fetchPlayerHand(this.game.id, this.localSeatIndex);
+      // A newer update superseded this snapshot while awaiting: discard it
+      if (seq !== this.updateSeq) return;
+      this.handCards = cards;
+      this.controller.setLocalHand(cards);
+      this.handFan.setCards(cards);
       this.renderHud();
       sound.playDeal();
     }
@@ -421,8 +454,22 @@ export class TableScene {
       }
     }
 
-    if (game.status === 'finished') {
+    if (game.status === 'finished' && !wasFinished) {
       this.callbacks.onGameFinished(game, this.localSeatIndex);
+    }
+  }
+
+  /**
+   * Fetches the authoritative game record and applies it (stale-guarded in
+   * handleGameUpdate). Runs every 5s and after every local move.
+   */
+  private async reconcileFromServer(): Promise<void> {
+    if (!this.game?.id) return;
+    try {
+      const fresh = await fetchGame(this.game.id);
+      await this.handleGameUpdate(fresh);
+    } catch {
+      // Transient network failure — the next interval retries
     }
   }
 
@@ -559,7 +606,7 @@ export class TableScene {
                   return `
                     <div class="turn-timer-hud" title="Turn Timer">
                       <span class="timer-icon">⏱️</span>
-                      <span class="timer-text" id="turn-timer-text">120s</span>
+                      <span class="timer-text" id="turn-timer-text">${TURN_TIMEOUT_SECS}s</span>
                       <div class="timer-progress-track">
                         <div class="timer-progress-bar" id="turn-timer-bar"></div>
                       </div>
@@ -896,6 +943,7 @@ export class TableScene {
       this.isProcessingMove = false;
       this.updateHudActionState();
       this.heartbeat?.triggerImmediate(250);
+      this.reconcileFromServer();
     }
   }
 
@@ -921,6 +969,7 @@ export class TableScene {
       this.isProcessingMove = false;
       this.updateHudActionState();
       this.heartbeat?.triggerImmediate(250);
+      this.reconcileFromServer();
     }
   }
 

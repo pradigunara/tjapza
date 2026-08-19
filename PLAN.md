@@ -73,7 +73,7 @@ stood in by bots to completion.
   - Any 5-card combo can be beaten by:
     1. A higher 5-card category (e.g. Flush beats Straight, Full House beats Flush, Quads beats Full House, Straight Flush beats Quads).
     2. A higher combo within the same category (e.g. higher Full House beats lower Full House).
-- **Passing**: Allowed at any time except the initial 3♦ opening move. Passing does not lock the player out of subsequent turns in the same trick.
+- **Passing**: Allowed at any time except the initial 3♦ opening move. A pass locks the player out for the remainder of the current trick; they re-enter play when the trick is cleared and a fresh lead begins.
 - **Pile Reset (Trick Cleared)**:
   - When all other active players pass consecutively (`pass_count == active_players - 1`), the trick ends.
   - The trick winner leads a fresh combo of any legal type.
@@ -91,12 +91,12 @@ stood in by bots to completion.
 ### Game Loop & Heartbeat Architecture
 - **Client-Driven Heartbeat with Dynamic Host Failover**:
   - The connected player with the lowest active seat index acts as the room ticker / host.
-  - The host client sends periodic ticks (`POST` move with `action: "tick"`) every 1–2s when it is a bot's turn or to check the 120s turn timer.
+  - The host client sends periodic ticks (`POST` move with `action: "tick"`) every 1–2s when it is a bot's turn or to check the 60s turn timer.
   - If the host disconnects, the next active human seat automatically detects the missing tick and assumes host duties.
   - If all humans disconnect, the game pauses in place until reconnection, or auto-forfeits on timeout.
-- **120s Turn Timer**:
+- **60s Turn Timer**:
   - Server records `turn_started_at`.
-  - If 120s elapses on a human seat, the server auto-plays via the bot heuristic on the next tick/action.
+  - If 60s elapses on a human seat, the server auto-plays via the bot heuristic on the next tick/action.
 
 ### Bot Heuristic AI
 - Deterministic, seeded RNG per game.
@@ -115,7 +115,7 @@ stood in by bots to completion.
   - Mid-game joins are blocked; no spectating.
 - **Public Quick-Play**:
   - In-table matching on `games` collection (`is_public = true && status = 'waiting'`).
-  - First player creates room; waits up to 12s for humans. When 12s expires or 4 humans join, the host triggers the deal.
+  - First player creates room; a 30s countdown is shown. Any seated player may force-start with bots once it expires; the host may start earlier. When a 4th human joins, the deal triggers immediately.
 - **Rematch Lifecycle**:
   - On game completion, players receive a 30s rematch prompt.
   - Unanimous accept creates a **brand new `games` record** with the same room code / seated players, preserving old game records and `results` immutably.

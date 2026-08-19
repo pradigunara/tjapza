@@ -15,3 +15,4 @@ export * from './RoomCode';
 export * from './Seat';
 export * from './Room';
 export * from './Podium';
+export * from './HandPurgePolicy';
