@@ -462,8 +462,20 @@ export class TableScene {
     if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
       const pName = seats[lastCombo.seat_index]?.name;
       this.pileView.setCombo(lastCombo, pName);
+
+      // Restrict selection to match target combo length (1 for single, 2 for pair, 5 for 5-card combo)
+      const len = lastCombo.cards.length;
+      if (len === 1) {
+        this.handFan.setMaxSelectionLimit(1);
+      } else if (len === 2) {
+        this.handFan.setMaxSelectionLimit(2);
+      } else {
+        this.handFan.setMaxSelectionLimit(5);
+      }
     } else {
       this.pileView.clearPile();
+      // Pile is empty / user opens trick: allow up to 5 cards selection
+      this.handFan.setMaxSelectionLimit(5);
     }
 
     this.resize(this.viewWidth, this.viewHeight);

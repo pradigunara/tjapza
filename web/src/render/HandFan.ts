@@ -76,12 +76,28 @@ export class HandFan extends Container {
     this.relayoutCards();
   }
 
+  private maxSelectionLimit = 5;
+
   public getSelectedCards(): number[] {
     return Array.from(this.selectedCards).sort((a, b) => a - b);
   }
 
+  public setMaxSelectionLimit(limit: number): void {
+    const clamped = Math.max(1, Math.min(5, limit));
+    this.maxSelectionLimit = clamped;
+    if (this.selectedCards.size > clamped) {
+      const kept = Array.from(this.selectedCards).slice(0, clamped);
+      this.selectedCards = new Set(kept);
+      for (const sprite of this.cardSprites) {
+        sprite.setSelected(this.selectedCards.has(sprite.cardCode));
+      }
+      this.relayoutCards();
+      this.onSelectionChanged?.(this.getSelectedCards());
+    }
+  }
+
   public setSelectedCards(cards: number[]): void {
-    this.selectedCards = new Set(cards.slice(0, 5));
+    this.selectedCards = new Set(cards.slice(0, this.maxSelectionLimit));
     for (const sprite of this.cardSprites) {
       sprite.setSelected(this.selectedCards.has(sprite.cardCode));
     }
@@ -102,11 +118,19 @@ export class HandFan extends Container {
     if (this.selectedCards.has(cardCode)) {
       this.selectedCards.delete(cardCode);
     } else {
-      // Big Two combo limit: cap selection at 5 cards maximum
-      if (this.selectedCards.size >= 5) {
-        return;
+      if (this.maxSelectionLimit === 1) {
+        // Auto-replace for single selection mode for seamless mobile tapping
+        this.selectedCards.clear();
+        for (const s of this.cardSprites) {
+          s.setSelected(false);
+        }
+        this.selectedCards.add(cardCode);
+      } else {
+        if (this.selectedCards.size >= this.maxSelectionLimit) {
+          return;
+        }
+        this.selectedCards.add(cardCode);
       }
-      this.selectedCards.add(cardCode);
     }
 
     sound.playClick();

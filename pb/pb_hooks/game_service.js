@@ -5,24 +5,31 @@ function findHandRecord(gameId, seatIndex, userId, app) {
     if (!gameId) return null;
     var hand = null;
 
-    // 1. Primary lookup: by game_id and seat_index
+    // Strategy 1: Exact game_id and seat_index filter
     if (typeof seatIndex === "number" && seatIndex >= 0 && seatIndex <= 3) {
         try {
             hand = db.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && seat_index = " + seatIndex);
         } catch (_) {}
     }
 
-    // 2. Secondary lookup: by game_id and user_id (if userId is non-empty)
+    // Strategy 2: Exact game_id and user_id filter
     if (!hand && userId) {
         try {
             hand = db.findFirstRecordByFilter("hands", "game_id = '" + gameId + "' && user_id = '" + userId + "'");
         } catch (_) {}
     }
 
-    // 3. Fallback: scan all hands for game_id and match seat or user_id
+    // Strategy 3: Relation traversal filter
+    if (!hand && typeof seatIndex === "number") {
+        try {
+            hand = db.findFirstRecordByFilter("hands", "game_id.id = '" + gameId + "' && seat_index = " + seatIndex);
+        } catch (_) {}
+    }
+
+    // Strategy 4: Full array scan for game_id (up to 50 records)
     if (!hand) {
         try {
-            var records = db.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 10, 0);
+            var records = db.findRecordsByFilter("hands", "game_id = '" + gameId + "'", "-created", 50, 0);
             for (var i = 0; i < records.length; i++) {
                 var r = records[i];
                 if (typeof seatIndex === "number" && r.getInt("seat_index") === seatIndex) {
@@ -31,6 +38,25 @@ function findHandRecord(gameId, seatIndex, userId, app) {
                 }
                 if (userId && r.getString("user_id") === userId) {
                     hand = r;
+                    break;
+                }
+            }
+        } catch (_) {}
+    }
+
+    // Strategy 5: App fallback if db was txApp and failed
+    if (!hand && app && app !== $app) {
+        return findHandRecord(gameId, seatIndex, userId, $app);
+    }
+
+    // Strategy 6: Scan all recent hands across the database matching user_id
+    if (!hand && userId) {
+        try {
+            var userHands = $app.findRecordsByFilter("hands", "user_id = '" + userId + "'", "-created", 20, 0);
+            for (var u = 0; u < userHands.length; u++) {
+                var uh = userHands[u];
+                if (uh.getString("game_id") === gameId) {
+                    hand = uh;
                     break;
                 }
             }
@@ -125,9 +151,11 @@ function applyDomainToRecord(domainGame, gameRecord) {
 
 function dealAndStartGame(gameRecord, app) {
     var db = app || $app;
+    var gId = (gameRecord && gameRecord.id) ? gameRecord.id : (gameRecord.getString ? gameRecord.getString("id") : "");
+
     // 1. Purge any stale hand records for this game if re-dealt or retried
     try {
-        var existingHands = db.findRecordsByFilter("hands", "game_id = '" + gameRecord.id + "'", "-created", 50, 0);
+        var existingHands = db.findRecordsByFilter("hands", "game_id = '" + gId + "'", "-created", 50, 0);
         for (var eh = 0; eh < existingHands.length; eh++) {
             try { db.delete(existingHands[eh]); } catch (_) {}
         }
@@ -140,7 +168,7 @@ function dealAndStartGame(gameRecord, app) {
     for (var seatIdx = 0; seatIdx < 4; seatIdx++) {
         var seatInfo = rawSeats[seatIdx];
         var handRecord = new Record(handsColl, {
-            game_id: gameRecord.id,
+            game_id: gId,
             user_id: (seatInfo && seatInfo.user_id) ? seatInfo.user_id : null,
             seat_index: seatIdx,
             cards: deal.hands[seatIdx].map(function(c) { return c.code; })
