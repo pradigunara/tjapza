@@ -11,6 +11,7 @@ describe('Trick Entity & Lifecycle Rules', () => {
     trick = trick.applyPlay(play1, 0);
     expect(trick.isFresh).toBe(false);
     expect(trick.trickWinnerSeat).toBe(0);
+    expect(trick.passCount).toBe(0);
 
     // Seat 1 passes
     trick = trick.applyPass(1);
@@ -20,10 +21,12 @@ describe('Trick Entity & Lifecycle Rules', () => {
     let nextSeat = trick.findNextSeat(counts, 1);
     expect(nextSeat).toBe(2);
 
-    // Seat 2 plays higher card
+    // Seat 2 plays higher card: consecutive pass count resets, Seat 1 stays passed
     const play2 = CardCombo.evaluate([Card.fromString('4♦')])!;
     trick = trick.applyPlay(play2, 2);
     expect(trick.trickWinnerSeat).toBe(2);
+    expect(trick.passCount).toBe(0);
+    expect(trick.hasPlayerPassed(1)).toBe(true);
 
     // Next seat from 2 is Seat 3
     nextSeat = trick.findNextSeat(counts, 2);

@@ -90,7 +90,7 @@ export class Trick {
       lastCombo: combo,
       leaderSeatIndex: this.leaderSeatIndex,
       passedSeats: this.passedSeats, // retain previously passed seats within the trick
-      passCount: this.passCount,
+      passCount: 0, // consecutive passes since the last play
       lastPlaySeatIndex: seatIndex,
     });
   }

@@ -586,7 +586,7 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError("Game is not in playing state");
             }
 
-            var currentTurn = game.getInt("turn_index");
+            var currentTurn = domainGame.turnIndex;
 
             // If action is tick, automatically sync seatIndex with the authoritative server turn
             if (action === "tick") {
@@ -598,17 +598,12 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError("Invalid seat_index: " + seatIndex);
             }
 
-            var leaderIndex = game.getInt("leader_index");
-            var passCount = game.getInt("pass_count");
-            var passedSeats = domain.parseJSON(game.get("passed_seats"), []);
-            var counts = domain.parseJSON(game.get("counts"), [13, 13, 13, 13]);
-            var lastCombo = gameService.effectiveLastCombo(domain.parseJSON(game.get("last_combo"), null));
-            var winnerRanks = domain.parseJSON(game.get("winner_ranks"), []);
+            var counts = domainGame.counts;
+            var lastCombo = domainGame.trick.lastCombo;
             var seats = domain.parseJSON(game.get("seats"), []);
             var currentSeat = seats[currentTurn];
             var turnStartedAt = game.getString("turn_started_at");
-
-            var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
+            var isOpeningMove = domainGame.isOpeningMove;
             var currentHandRecord = null;
 
             // 2. Handle TICK Action (Bot move or turn timer timeout auto-play)
@@ -631,7 +626,7 @@ onRecordCreateRequest((e) => {
                     var nextActive = gameService.findNextActiveSeat(counts, currentTurn);
                     if (nextActive !== currentTurn && counts[currentTurn] === 0) {
                         game.set("turn_index", nextActive);
-                        if (!lastCombo) {
+                        if (domainGame.trick.isFresh) {
                             game.set("leader_index", nextActive);
                         }
                         game.set("turn_started_at", new Date().toISOString());
@@ -645,15 +640,7 @@ onRecordCreateRequest((e) => {
                 var botHandCards = domain.parseJSON(currentHandRecord.get("cards"), []);
                 var botMove = domain.BotEngine.decideMove({
                     hand: new domain.Hand(botHandCards),
-                    trick: lastCombo
-                        ? new domain.Trick({
-                            lastCombo: domain.CardCombo.evaluate(lastCombo.cards),
-                            leaderSeatIndex: leaderIndex,
-                            passedSeats: passedSeats,
-                            passCount: passCount,
-                            lastPlaySeatIndex: (typeof lastCombo.seat_index === "number") ? lastCombo.seat_index : leaderIndex
-                          })
-                        : domain.Trick.createFresh(currentTurn),
+                    trick: domainGame.trick,
                     isOpeningMove: isOpeningMove,
                     counts: counts,
                     seatIndex: currentTurn
@@ -750,12 +737,8 @@ onRecordCreateRequest((e) => {
                     throw new BadRequestError("Invalid card combination");
                 }
 
-                // Check if beats last_combo
-                if (lastCombo) {
-                    var targetCombo = domain.CardCombo.evaluate(lastCombo.cards);
-                    if (targetCombo && !playedCombo.canBeat(targetCombo)) {
-                        throw new BadRequestError("Played combination does not beat the current pile");
-                    }
+                if (lastCombo && !playedCombo.canBeat(lastCombo)) {
+                    throw new BadRequestError("Played combination does not beat the current pile");
                 }
 
                 // Set combo fields on move record
@@ -792,120 +775,31 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError("Unknown move action: " + action);
             }
 
-            // ----------------------------------------------------
-            // 4. ATOMIC STATE MUTATIONS
-            // ----------------------------------------------------
+            // 4. Domain transition, then persist side effects (hand, results)
+            var prevRanks = (domainGame.winnerRanks || []).slice();
 
-            if (action === "play") {
-                // 1. Remove cards from hand
-                var remainingCards = playerHandCards.filter(function(card) {
-                    return cardsPlayed.indexOf(card) === -1;
-                });
-                playerHandRecord.set("cards", domain.Card.sortCodes(remainingCards));
-                txApp.save(playerHandRecord);
-
-                // 2. Update counts and last_combo
-                counts[seatIndex] = remainingCards.length;
-                game.set("counts", counts);
-                game.set("last_combo", {
-                    type: playedCombo.type,
-                    power: playedCombo.power,
-                    cards: domain.Card.sortCodes(cardsPlayed),
-                    seat_index: seatIndex
-                });
-                game.set("pass_count", 0);
-
-                // 3. Shedding & Ranking Check
-                if (remainingCards.length === 0) {
-                    var playerRank = winnerRanks.length + 1;
-                    winnerRanks.push(seatIndex);
-                    game.set("winner_ranks", winnerRanks);
-
-                    // Record result
-                    var resultsColl = txApp.findCollectionByNameOrId("results");
-                    var resultRec = new Record(resultsColl, {
-                        game_id: game.id,
-                        user_id: (currentSeat && currentSeat.user_id) ? currentSeat.user_id : null,
-                        seat_index: seatIndex,
-                        rank: playerRank,
-                        is_bot: !!(currentSeat && currentSeat.is_bot)
+            try {
+                if (action === "play") {
+                    var remainingCards = playerHandCards.filter(function(card) {
+                        return cardsPlayed.indexOf(card) === -1;
                     });
-                    txApp.save(resultRec);
-
-                    // Count remaining active players
-                    var activeSeats = [];
-                    for (var a = 0; a < 4; a++) {
-                        if (counts[a] > 0) activeSeats.push(a);
-                    }
-
-                    if (activeSeats.length === 1) {
-                        // Game finished! Last remaining player takes 4th place
-                        var lastPlayerSeat = activeSeats[0];
-                        winnerRanks.push(lastPlayerSeat);
-                        game.set("winner_ranks", winnerRanks);
-                        game.set("status", "finished");
-
-                        var lastSeatInfo = seats[lastPlayerSeat];
-                        var lastResult = new Record(resultsColl, {
-                            game_id: game.id,
-                            user_id: (lastSeatInfo && lastSeatInfo.user_id) ? lastSeatInfo.user_id : null,
-                            seat_index: lastPlayerSeat,
-                            rank: 4,
-                            is_bot: !!(lastSeatInfo && lastSeatInfo.is_bot)
-                        });
-                        txApp.save(lastResult);
-                    }
-                }
-
-                // If game is still active, advance turn using Trick domain entity
-                if (game.getString("status") === "playing") {
-                    var domainTrick = new domain.Trick({
-                        lastCombo: playedCombo,
-                        leaderSeatIndex: leaderIndex,
-                        passedSeats: passedSeats,
-                        lastPlaySeatIndex: seatIndex
-                    });
-
-                    var nextTurn = domainTrick.findNextSeat(counts, seatIndex);
-                    if (nextTurn === -1) {
-                        gameService.clearTrickAndLead(game, seatIndex, counts);
-                    } else {
-                        game.set("passed_seats", passedSeats);
-                        game.set("turn_index", nextTurn);
-                    }
-                    game.set("turn_started_at", new Date().toISOString());
-                }
-            } else if (action === "pass") {
-                if (passedSeats.indexOf(seatIndex) === -1) {
-                    passedSeats.push(seatIndex);
-                }
-                var newPassCount = passCount + 1;
-                game.set("pass_count", newPassCount);
-
-                var trickWinnerSeat = (lastCombo && typeof lastCombo.seat_index === 'number') ? lastCombo.seat_index : seatIndex;
-                var domainTrick2 = new domain.Trick({
-                    lastCombo: lastCombo ? domain.CardCombo.evaluate(lastCombo.cards) : null,
-                    leaderSeatIndex: leaderIndex,
-                    passedSeats: passedSeats,
-                    lastPlaySeatIndex: trickWinnerSeat
-                });
-
-                var nextActiveTurn = domainTrick2.findNextSeat(counts, seatIndex);
-
-                // If no other eligible player remains, trick ends!
-                if (nextActiveTurn === -1) {
-                    gameService.clearTrickAndLead(game, trickWinnerSeat, counts);
+                    playerHandRecord.set("cards", domain.Card.sortCodes(remainingCards));
+                    txApp.save(playerHandRecord);
+                    domainGame = domainGame.applyPlay(cardsPlayed, seatIndex);
                 } else {
-                    game.set("passed_seats", passedSeats);
-                    game.set("turn_index", nextActiveTurn);
+                    domainGame = domainGame.applyPass(seatIndex);
                 }
+            } catch (applyErr) {
+                throw new BadRequestError(applyErr && applyErr.message ? applyErr.message : String(applyErr));
+            }
 
+            gameService.persistNewResults(txApp, game.id, prevRanks, domainGame.winnerRanks, seats);
+            gameService.applyDomainToRecord(domainGame, game);
+            if (domainGame.status === "playing") {
                 game.set("turn_started_at", new Date().toISOString());
             }
 
-            // 5. POST-RECONCILIATION
-            var postDomainGame = gameService.recordToDomain(game);
-            var postRec = domain.CapsaGame.reconcile(postDomainGame);
+            var postRec = domain.CapsaGame.reconcile(domainGame);
             if (postRec.healed) {
                 gameService.applyDomainToRecord(postRec.game, game);
             }

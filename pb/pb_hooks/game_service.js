@@ -222,6 +222,29 @@ function clearTrickAndLead(game, winnerSeat, counts) {
     game.set("leader_index", lead);
 }
 
+function persistNewResults(txApp, gameId, prevRanks, nextRanks, seats) {
+    var seen = {};
+    for (var i = 0; i < (prevRanks || []).length; i++) {
+        seen[prevRanks[i]] = true;
+    }
+    var resultsColl = null;
+    for (var r = 0; r < (nextRanks || []).length; r++) {
+        var seat = nextRanks[r];
+        if (seen[seat]) continue;
+        if (!resultsColl) {
+            resultsColl = txApp.findCollectionByNameOrId("results");
+        }
+        var info = seats[seat];
+        txApp.save(new Record(resultsColl, {
+            game_id: gameId,
+            user_id: (info && info.user_id) ? info.user_id : null,
+            seat_index: seat,
+            rank: r + 1,
+            is_bot: !!(info && info.is_bot)
+        }));
+    }
+}
+
 /**
  * Ephemeral data cleanup, invoked by the 10-minute tjapzaEphemeralCleanup
  * cron in main.pb.js.
@@ -299,6 +322,7 @@ module.exports = {
     dealAndStartGame: dealAndStartGame,
     findNextActiveSeat: findNextActiveSeat,
     clearTrickAndLead: clearTrickAndLead,
+    persistNewResults: persistNewResults,
     findHandRecord: findHandRecord,
     effectiveLastCombo: effectiveLastCombo,
     recordToDomain: recordToDomain,

@@ -78,6 +78,7 @@ __export(index_exports, {
   Trick: () => Trick,
   TurnTimer: () => TurnTimer,
   parseJSON: () => parseJSON,
+  seatsFromSnapshot: () => seatsFromSnapshot,
   shouldPurgeHand: () => shouldPurgeHand
 });
 module.exports = __toCommonJS(index_exports);
@@ -899,7 +900,8 @@ var Trick = class _Trick {
       leaderSeatIndex: this.leaderSeatIndex,
       passedSeats: this.passedSeats,
       // retain previously passed seats within the trick
-      passCount: this.passCount,
+      passCount: 0,
+      // consecutive passes since the last play
       lastPlaySeatIndex: seatIndex
     });
   }
@@ -1448,6 +1450,24 @@ var Seat = class _Seat {
     });
   }
 };
+function seatsFromSnapshot(seats, counts) {
+  var _a, _b, _c, _d, _e, _f, _g;
+  const out = [];
+  for (let i = 0; i < 4; i++) {
+    const s = seats == null ? void 0 : seats[i];
+    out.push(
+      s ? new Seat({
+        index: i,
+        userId: (_b = (_a = s.userId) != null ? _a : s.user_id) != null ? _b : null,
+        name: (_c = s.name) != null ? _c : "",
+        isBot: (_d = s.isBot) != null ? _d : s.is_bot,
+        connected: s.connected,
+        cardCount: (_g = (_f = (_e = counts == null ? void 0 : counts[i]) != null ? _e : s.cardCount) != null ? _f : s.card_count) != null ? _g : 0
+      }) : Seat.createEmpty(i)
+    );
+  }
+  return out;
+}
 
 // src/domain/Room.ts
 var Room = class _Room {

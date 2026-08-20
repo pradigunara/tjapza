@@ -19,6 +19,13 @@ describe('CapsaGame State Machine & Self-Healing Reconciliation', () => {
     expect(nextGame.counts[0]).toBe(12);
     expect(nextGame.turnIndex).toBe(1);
     expect(nextGame.trick.lastCombo?.type).toBe('single');
+
+    const afterPass = nextGame.applyPass(1);
+    expect(afterPass.trick.passCount).toBe(1);
+    const afterBeat = afterPass.applyPlay([Card.fromString('4♦')], 2);
+    expect(afterBeat.trick.passCount).toBe(0);
+    expect(afterBeat.trick.hasPlayerPassed(1)).toBe(true);
+    expect(afterBeat.turnIndex).toBe(3);
   });
 
   describe('Invariant I1: Active Seat Integrity', () => {
