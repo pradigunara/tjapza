@@ -34,7 +34,7 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
           file: HF_FILE,
         },
         {
-          n_ctx: 1024,
+          n_ctx: 512,
           useCache: true,
           progressCallback: ({ loaded, total }) => {
             const pct = total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0;
@@ -94,7 +94,7 @@ self.onmessage = async (event: MessageEvent<WorkerIncomingMessage>) => {
       const startTime = performance.now();
       const response = await wllamaInstance.createCompletion({
         prompt: msg.prompt,
-        max_tokens: msg.maxNewTokens || 64,
+        max_tokens: msg.maxNewTokens || 36,
         temperature: 0.1,
       });
 

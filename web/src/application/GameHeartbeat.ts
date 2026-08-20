@@ -155,7 +155,7 @@ export class GameHeartbeat {
                   isOpeningMove: isOpening,
                   isFreshTrick: isFresh,
                 },
-                { timeoutMs: 4500 }
+                { timeoutMs: 5000 }
               );
 
               const playedCards = decision.action === 'play' ? decision.cards : [];
