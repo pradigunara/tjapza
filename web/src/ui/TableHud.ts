@@ -94,7 +94,7 @@ export function tableHudHtml(state: TableHudState): string {
             <span class="badge-code">${game.room_code || '---'}</span>
             <span class="badge-copy-icon">${ICONS.copy}</span>
           </div>
-          ${isAiReady ? `<div class="table-ai-badge" title="On-Device AI Host Active">🧠 AI Host</div>` : ''}
+          ${isAiReady ? `<div class="table-ai-badge" title="On-Device AI Active"><span class="badge-ai-icon">🧠</span><span class="badge-ai-text">AI</span></div>` : ''}
         </div>
 
         <div class="top-bar-right">

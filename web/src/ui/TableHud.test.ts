@@ -168,7 +168,8 @@ describe('tableHudHtml', () => {
   test('renders AI host badge when isAiReady is true', () => {
     const html = tableHudHtml(hudState({ isAiReady: true }));
     expect(html).toContain('table-ai-badge');
-    expect(html).toContain('🧠 AI Host');
+    expect(html).toContain('badge-ai-text');
+    expect(html).toContain('AI');
   });
 
   test('does not render AI host badge when isAiReady is false or undefined', () => {
