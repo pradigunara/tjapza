@@ -90,3 +90,27 @@ export class Seat {
     });
   }
 }
+
+/** Four seats from a game snapshot (DTO seats + counts). Empty slots become vacant. */
+export function seatsFromSnapshot(
+  seats: Array<SeatProps | Record<string, any> | null | undefined> | undefined,
+  counts?: number[]
+): Seat[] {
+  const out: Seat[] = [];
+  for (let i = 0; i < 4; i++) {
+    const s = seats?.[i];
+    out.push(
+      s
+        ? new Seat({
+            index: i,
+            userId: s.userId ?? s.user_id ?? null,
+            name: s.name ?? '',
+            isBot: s.isBot ?? s.is_bot,
+            connected: s.connected,
+            cardCount: counts?.[i] ?? s.cardCount ?? s.card_count ?? 0,
+          })
+        : Seat.createEmpty(i)
+    );
+  }
+  return out;
+}

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import PocketBase from "../web/node_modules/pocketbase";
-import { CardCombo, BotEngine, Hand, Trick } from "../web/src/domain";
+import { CardCombo } from "../web/src/domain";
+import { decideBotMoveFromGame } from "./lib/botFromGame";
 
 const PB_PORT = 8098;
 const PB_URL = `http://127.0.0.1:${PB_PORT}`;
@@ -241,17 +242,7 @@ async function runEdgeCasesSuite() {
           `game_id = "${game.id}" && user_id = "${client.authStore.record?.id}"`
         );
         const cards: number[] = handRec.cards || [];
-        const isOpening = !game.last_combo && game.counts.every((c: number) => c === 13);
-        const trick = game.last_combo?.cards?.length > 0
-          ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
-          : Trick.createFresh(currentTurn);
-
-        const decision = BotEngine.decideMove({
-          hand: new Hand(cards),
-          trick: trick,
-          isOpeningMove: isOpening,
-          counts: game.counts
-        });
+        const decision = decideBotMoveFromGame(game, cards, currentTurn);
 
         if (decision.action === "play" && decision.cards.length > 0) {
           const combo = CardCombo.evaluate(decision.cards);

@@ -602,15 +602,11 @@ onRecordCreateRequest((e) => {
             var passCount = game.getInt("pass_count");
             var passedSeats = domain.parseJSON(game.get("passed_seats"), []);
             var counts = domain.parseJSON(game.get("counts"), [13, 13, 13, 13]);
-            var lastCombo = domain.parseJSON(game.get("last_combo"), null);
+            var lastCombo = gameService.effectiveLastCombo(domain.parseJSON(game.get("last_combo"), null));
             var winnerRanks = domain.parseJSON(game.get("winner_ranks"), []);
             var seats = domain.parseJSON(game.get("seats"), []);
             var currentSeat = seats[currentTurn];
             var turnStartedAt = game.getString("turn_started_at");
-
-            if (lastCombo && (!lastCombo.cards || lastCombo.cards.length === 0)) {
-                lastCombo = null;
-            }
 
             var isOpeningMove = (lastCombo == null && counts[0] === 13 && counts[1] === 13 && counts[2] === 13 && counts[3] === 13);
             var currentHandRecord = null;
@@ -649,7 +645,7 @@ onRecordCreateRequest((e) => {
                 var botHandCards = domain.parseJSON(currentHandRecord.get("cards"), []);
                 var botMove = domain.BotEngine.decideMove({
                     hand: new domain.Hand(botHandCards),
-                    trick: lastCombo && lastCombo.cards && lastCombo.cards.length > 0
+                    trick: lastCombo
                         ? new domain.Trick({
                             lastCombo: domain.CardCombo.evaluate(lastCombo.cards),
                             leaderSeatIndex: leaderIndex,
@@ -755,7 +751,7 @@ onRecordCreateRequest((e) => {
                 }
 
                 // Check if beats last_combo
-                if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
+                if (lastCombo) {
                     var targetCombo = domain.CardCombo.evaluate(lastCombo.cards);
                     if (targetCombo && !playedCombo.canBeat(targetCombo)) {
                         throw new BadRequestError("Played combination does not beat the current pile");
@@ -872,18 +868,7 @@ onRecordCreateRequest((e) => {
 
                     var nextTurn = domainTrick.findNextSeat(counts, seatIndex);
                     if (nextTurn === -1) {
-                        // All other active players have already passed in this trick: trick ends immediately!
-                        game.set("last_combo", null);
-                        game.set("passed_seats", []);
-                        game.set("pass_count", 0);
-                        if (counts[seatIndex] > 0) {
-                            game.set("turn_index", seatIndex);
-                            game.set("leader_index", seatIndex);
-                        } else {
-                            var clockwiseLeader = gameService.findNextActiveSeat(counts, seatIndex);
-                            game.set("turn_index", clockwiseLeader);
-                            game.set("leader_index", clockwiseLeader);
-                        }
+                        gameService.clearTrickAndLead(game, seatIndex, counts);
                     } else {
                         game.set("passed_seats", passedSeats);
                         game.set("turn_index", nextTurn);
@@ -909,18 +894,7 @@ onRecordCreateRequest((e) => {
 
                 // If no other eligible player remains, trick ends!
                 if (nextActiveTurn === -1) {
-                    game.set("last_combo", null);
-                    game.set("passed_seats", []);
-                    game.set("pass_count", 0);
-
-                    if (counts[trickWinnerSeat] > 0) {
-                        game.set("turn_index", trickWinnerSeat);
-                        game.set("leader_index", trickWinnerSeat);
-                    } else {
-                        var clockwiseLeader2 = gameService.findNextActiveSeat(counts, trickWinnerSeat);
-                        game.set("turn_index", clockwiseLeader2);
-                        game.set("leader_index", clockwiseLeader2);
-                    }
+                    gameService.clearTrickAndLead(game, trickWinnerSeat, counts);
                 } else {
                     game.set("passed_seats", passedSeats);
                     game.set("turn_index", nextActiveTurn);

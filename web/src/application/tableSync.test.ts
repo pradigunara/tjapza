@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { isStaleGameSnapshot, shouldShowPlayOnPile } from './tableSync';
+import { effectiveLastCombo, isStaleGameSnapshot, shouldShowPlayOnPile } from './tableSync';
+
+describe('effectiveLastCombo', () => {
+  test('treats null and empty cards as no pile', () => {
+    expect(effectiveLastCombo(null)).toBeNull();
+    expect(effectiveLastCombo(undefined)).toBeNull();
+    expect(effectiveLastCombo({ cards: [] })).toBeNull();
+  });
+
+  test('keeps a combo that still has cards', () => {
+    const combo = { cards: [40], seat_index: 1 };
+    expect(effectiveLastCombo(combo)).toBe(combo);
+  });
+});
 
 describe('isStaleGameSnapshot', () => {
   test('drops a snapshot older than the one already applied', () => {

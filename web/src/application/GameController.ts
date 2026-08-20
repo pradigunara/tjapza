@@ -3,6 +3,7 @@ import {
   Hand,
   Trick,
   CapsaGame,
+  CARD_3D,
   type GameSeat,
 } from '../domain';
 import {
@@ -12,6 +13,7 @@ import {
 } from '../net/pb';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
+import { effectiveLastCombo } from './tableSync';
 
 /**
  * Application Controller: Bridges pure Domain models with UI scenes & network I/O.
@@ -39,7 +41,7 @@ export class GameController {
       connected: Boolean(s && s.connected),
     }));
 
-    const rawLastCombo = dto.last_combo?.cards?.length ? dto.last_combo : null;
+    const rawLastCombo = effectiveLastCombo(dto.last_combo);
     const lastCombo = rawLastCombo ? CardCombo.evaluate(rawLastCombo.cards) : null;
 
     const trick = new Trick({
@@ -116,12 +118,16 @@ export class GameController {
       return { valid: false, reason: 'Cards are not in your hand.' };
     }
 
-    if (this.game.isOpeningMove && !combo.containsCardCode(0)) {
+    if (this.game.isOpeningMove && !combo.containsCardCode(CARD_3D)) {
       return { valid: false, reason: 'Opening play must contain 3♦.' };
     }
 
     if (this.game.trick.lastCombo && !combo.canBeat(this.game.trick.lastCombo)) {
       return { valid: false, reason: `Cannot beat ${this.game.trick.lastCombo.description}.` };
+    }
+
+    if (!this.game.canPlay(selectedCodes, this.localSeatIndex, this.localHand.cardCodes)) {
+      return { valid: false, reason: 'Cannot play those cards now.' };
     }
 
     return { valid: true, combo };
@@ -130,6 +136,9 @@ export class GameController {
   public canPassTurn(): { valid: boolean; reason?: string } {
     if (!this.isMyTurn) {
       return { valid: false, reason: 'Not your turn.' };
+    }
+    if (this.game.canPass(this.localSeatIndex)) {
+      return { valid: true };
     }
     if (this.game.isOpeningMove) {
       return { valid: false, reason: 'Cannot pass on opening move.' };
@@ -140,7 +149,7 @@ export class GameController {
     if (this.game.trick.hasPlayerPassed(this.localSeatIndex)) {
       return { valid: false, reason: 'You have already passed in this trick.' };
     }
-    return { valid: true };
+    return { valid: false, reason: 'Cannot pass.' };
   }
 
   public findHintCombo(selectedCodes: number[] = []): CardCombo | null {
@@ -165,10 +174,7 @@ export class GameController {
 
   public async executePlay(selectedCodes: number[]): Promise<boolean> {
     const check = this.canPlayCards(selectedCodes);
-    if (!check.valid) {
-      toast.warning(check.reason || 'Invalid play');
-      return false;
-    }
+    if (!check.valid) return false;
 
     try {
       await playCards(this.game.id, this.localSeatIndex, selectedCodes);
@@ -183,10 +189,7 @@ export class GameController {
 
   public async executePass(): Promise<boolean> {
     const check = this.canPassTurn();
-    if (!check.valid) {
-      toast.warning(check.reason || 'Cannot pass');
-      return false;
-    }
+    if (!check.valid) return false;
 
     try {
       await passTurn(this.game.id, this.localSeatIndex);

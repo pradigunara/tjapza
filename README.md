@@ -22,15 +22,17 @@ tjapza/
 ├─ pb/
 │  ├─ pb_migrations/            # Schema migrations (users, games, hands, moves, results)
 │  ├─ pb_hooks/
-│  │  ├─ cards.js               # Isomorphic ES5 rules engine & bot AI (Goja runtime)
+│  │  ├─ domain.js              # Bundled ES5 rules engine & bot AI (Goja runtime)
+│  │  ├─ game_service.js        # Deal, DTO↔domain, hand lookup, cleanup
 │  │  └─ main.pb.js             # Move validator, room endpoints, rematch, trick loop
 │  └─ pb_public/                # Production web assets served by PocketBase
 ├─ web/
 │  ├─ src/
+│  │  ├─ application/           # GameController, heartbeat, table SSE sync
 │  │  ├─ audio/sound.ts         # Procedural Web Audio synthesizer
-│  │  ├─ net/pb.ts              # PocketBase client, SSE listeners, host heartbeat
+│  │  ├─ domain/                # Capsa Banting rules, Trick, BotEngine
+│  │  ├─ net/pb.ts              # PocketBase client, SSE listeners
 │  │  ├─ render/                # CardSprite, HandFan, PileView, SeatView
-│  │  ├─ rules/cards.ts         # Isomorphic TypeScript rules engine
 │  │  ├─ scenes/                # LobbyScene, TableScene, ResultsScene
 │  │  └─ main.ts                # App entrypoint & scene routing
 │  ├─ package.json

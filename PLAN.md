@@ -163,15 +163,16 @@ tjapza/
 │  ├─ pb_migrations/            # schema definitions (users, games, hands, moves, results)
 │  ├─ pb_hooks/
 │  │  ├─ main.pb.js             # move interceptor, deal hook, tick resolver, rematch
-│  │  └─ cards.js               # ES5 rules engine & bot AI (shared logic)
+│  │  ├─ game_service.js        # deal, DTO↔domain, hand lookup, cleanup
+│  │  └─ domain.js              # ES5 rules engine & bot AI (built from web/src/domain)
 │  └─ pb_public/                # built Vite SPA served by PocketBase
 └─ web/
    ├─ index.html
    ├─ src/
    │  ├─ main.ts                # App entry & Pixi stage bootstrap
-   │  ├─ net/pb.ts              # PocketBase SDK, auth, SSE subscriptions & heartbeat
-   │  ├─ game/                  # Client state store & SSE reconciler
-   │  ├─ rules/cards.ts         # TypeScript rules engine (mirrors cards.js)
+   │  ├─ application/           # GameController, heartbeat, table SSE sync
+   │  ├─ net/pb.ts              # PocketBase SDK, auth, SSE subscriptions
+   │  ├─ domain/                # TypeScript rules engine (source of domain.js)
    │  ├─ audio/sound.ts         # Web Audio sound effects
    │  ├─ scenes/                # LobbyScene, TableScene, ResultsScene
    │  ├─ render/                # CardSprite, HandFan, PileView, SeatView
@@ -184,7 +185,7 @@ tjapza/
 ## 9. Implementation Milestones
 
 - **M1: Foundation & Auth** — PocketBase schema migrations, Google OAuth2, Lobby & Room creation/joining.
-- **M2: Rules Engine & Bot AI** — Unit-tested isomorphic Capsa Banting rules engine (`cards.ts` / `cards.js`) & deterministic bot heuristic.
+- **M2: Rules Engine & Bot AI** — Unit-tested isomorphic Capsa Banting rules engine (`web/src/domain` / `pb_hooks/domain.js`) & deterministic bot heuristic.
 - **M3: Authoritative Game Loop** — Dealing, `moves` record hooks, client-driven heartbeat with host failover, 120s timer, trick shedding & rank-out.
 - **M4: PixiJS Table & Realtime UX** — Table view, card fanning, tap-to-lift, SSE reconciliation, tweens, turn countdown.
 - **M5: Polish & Hardening** — Web Audio sound effects, Rematch flow, player stats/profile, mobile touch tuning, Caddy deployment setup.

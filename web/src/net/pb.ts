@@ -104,19 +104,24 @@ export interface AuthUser {
 // Auth Helpers
 // -----------------------------------------------------------------------------
 
+function authUserFromRecord(rec: RecordModel): AuthUser {
+  const email = rec.email || '';
+  const isGuest = email.endsWith('@tjapza.local');
+  return {
+    id: rec.id,
+    email,
+    display_name:
+      rec.display_name || rec.name || (isGuest ? 'Guest Player' : email.split('@')[0]) || 'Player',
+    avatar: rec.avatar,
+    isGuest,
+  };
+}
+
 export function getCurrentUser(): AuthUser | null {
   if (!pb.authStore.isValid || !pb.authStore.record) {
     return null;
   }
-  const rec = pb.authStore.record;
-  const isGuest = rec.email?.endsWith('@tjapza.local') ?? false;
-  return {
-    id: rec.id,
-    email: rec.email,
-    display_name: rec.display_name || rec.name || (isGuest ? 'Guest Player' : rec.email?.split('@')[0]) || 'Player',
-    avatar: rec.avatar,
-    isGuest,
-  };
+  return authUserFromRecord(pb.authStore.record);
 }
 
 export function isLoggedIn(): boolean {
@@ -125,14 +130,7 @@ export function isLoggedIn(): boolean {
 
 export async function login(email: string, pass: string): Promise<AuthUser> {
   const authData = await pb.collection('users').authWithPassword(email, pass);
-  const rec = authData.record;
-  return {
-    id: rec.id,
-    email: rec.email,
-    display_name: rec.display_name || rec.name || rec.email.split('@')[0],
-    avatar: rec.avatar,
-    isGuest: rec.email.endsWith('@tjapza.local'),
-  };
+  return authUserFromRecord(authData.record);
 }
 
 export async function signup(email: string, pass: string, displayName?: string): Promise<AuthUser> {
@@ -188,14 +186,7 @@ export async function createGuestSession(preferredName?: string): Promise<AuthUs
 
 export async function loginWithGoogle(): Promise<AuthUser> {
   const authData = await pb.collection('users').authWithOAuth2({ provider: 'google' });
-  const rec = authData.record;
-  return {
-    id: rec.id,
-    email: rec.email,
-    display_name: rec.display_name || rec.name || rec.email.split('@')[0],
-    avatar: rec.avatar,
-    isGuest: false,
-  };
+  return authUserFromRecord(authData.record);
 }
 
 export async function updateDisplayName(name: string): Promise<void> {
@@ -351,7 +342,7 @@ export async function passTurn(gameId: string, seatIndex: number): Promise<MoveR
 export async function sendTick(gameId: string, seatIndex: number): Promise<MoveRecord> {
   return await pb.collection('moves').create<MoveRecord>({
     game_id: gameId,
-    seat_index: seatIndex,
+    seat_index: seatIndex >= 0 && seatIndex <= 3 ? seatIndex : 0,
     action: 'tick',
     cards: [],
   });

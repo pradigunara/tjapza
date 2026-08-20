@@ -1,6 +1,7 @@
 import { Card } from '../domain';
 import type { MoveRecord, SeatInfo } from '../net/pb';
 import { escapeHtml } from './escape';
+import { formatSeatLabel } from './seatLabel';
 import { sound } from '../audio/sound';
 
 export interface MoveHistoryModalOptions {
@@ -44,9 +45,8 @@ export class MoveHistoryModal {
         const move = moves[i];
         const sIndex = move.seat_index;
         const sInfo = seats[sIndex];
-        const rawName = sInfo?.name || (sInfo?.is_bot ? 'Bot' : `Seat ${sIndex + 1}`);
         const isLocal = sIndex === localSeatIndex;
-        const seatLabel = `${sIndex + 1} | ${rawName}${isLocal ? ' (You)' : ''}`;
+        const seatLabel = formatSeatLabel(sIndex, sInfo, { you: isLocal });
 
         // Detect new trick divider:
         if (i > 0 && isFreshTrick && move.action === 'play') {

@@ -5,8 +5,6 @@ import {
   fetchGame,
   fetchMoves,
   fetchPlayerHand,
-  playCards,
-  passTurn,
   startGame,
   subscribeToGame,
   type GameRecord,
@@ -14,19 +12,20 @@ import {
   type MoveRecord,
 } from '../net/pb';
 import { GameController } from '../application/GameController';
-import { isStaleGameSnapshot, shouldShowPlayOnPile } from '../application/tableSync';
+import { effectiveLastCombo, isStaleGameSnapshot, shouldShowPlayOnPile } from '../application/tableSync';
 import { HandFan } from '../render/HandFan';
 import { SeatView } from '../render/SeatView';
 import { PileView } from '../render/PileView';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 import { escapeHtml } from '../ui/escape';
+import { formatSeatLabel } from '../ui/seatLabel';
 import { MoveHistoryModal } from '../ui/MoveHistoryModal';
 import {
   Card,
   CardCombo,
   Room,
-  Seat,
+  seatsFromSnapshot,
   TurnTimer,
   PUBLIC_LOBBY_AUTOSTART_MS,
   TURN_TIMEOUT_SECS,
@@ -129,15 +128,7 @@ export class TableScene {
     this.app.stage.addChild(this.rootContainer);
     parentEl.appendChild(this.hudContainer);
 
-    // Synchronize local seat index with server auth
-    const current = getCurrentUser();
-    if (current?.id && this.game.seats) {
-      const serverSeat = this.game.seats.findIndex((s) => s && s.user_id === current.id);
-      if (serverSeat >= 0 && serverSeat !== this.localSeatIndex) {
-        this.localSeatIndex = serverSeat;
-        this.controller.setLocalSeatIndex(serverSeat);
-      }
-    }
+    this.syncLocalSeat(this.game);
 
     // Fetch past moves in this match
     fetchMoves(this.game.id)
@@ -422,26 +413,21 @@ export class TableScene {
 
   /** Center pile, or null when the trick is discarded / a fresh lead. */
   private get lastCombo(): LastCombo | null {
-    const combo = this.game.last_combo;
-    return combo?.cards?.length ? combo : null;
+    return effectiveLastCombo(this.game.last_combo);
   }
 
-  private getHostSeatIndex(seats: any[]): number {
-    const room = new Room({
-      code: '',
-      seats: seats?.map((s, idx) =>
-        s
-          ? new Seat({
-              index: idx,
-              userId: s.user_id,
-              name: s.name,
-              isBot: s.is_bot,
-              connected: s.connected,
-            })
-          : null
-      ),
-    });
-    return room.hostSeatIndex;
+  private getHostSeatIndex(seats: GameRecord['seats']): number {
+    return new Room({ code: '', seats: seatsFromSnapshot(seats) }).hostSeatIndex;
+  }
+
+  private syncLocalSeat(game: GameRecord): void {
+    const current = getCurrentUser();
+    if (!current?.id || !game.seats) return;
+    const serverSeat = game.seats.findIndex((s) => s && s.user_id === current.id);
+    if (serverSeat >= 0 && serverSeat !== this.localSeatIndex) {
+      this.localSeatIndex = serverSeat;
+      this.controller.setLocalSeatIndex(serverSeat);
+    }
   }
 
   private async handleGameUpdate(game: GameRecord): Promise<void> {
@@ -462,17 +448,7 @@ export class TableScene {
     const nextHost = this.getHostSeatIndex(game.seats || []);
 
     this.game = game;
-
-    // Synchronize local seat index with server seats if authenticated
-    const current = getCurrentUser();
-    if (current?.id && game.seats) {
-      const serverSeat = game.seats.findIndex((s) => s && s.user_id === current.id);
-      if (serverSeat >= 0 && serverSeat !== this.localSeatIndex) {
-        this.localSeatIndex = serverSeat;
-        this.controller.setLocalSeatIndex(serverSeat);
-      }
-    }
-
+    this.syncLocalSeat(game);
     this.controller.updateGameFromDto(game);
 
     if (wasWaiting && game.status === 'waiting' && prevHost !== nextHost && nextHost === this.localSeatIndex) {
@@ -527,8 +503,7 @@ export class TableScene {
     }
 
     const seats = this.game.seats || [];
-    const rawName = seats[move.seat_index]?.name || (seats[move.seat_index]?.is_bot ? 'Bot' : `Seat ${move.seat_index + 1}`);
-    const seatName = `${move.seat_index + 1} | ${rawName}`;
+    const seatName = formatSeatLabel(move.seat_index, seats[move.seat_index]);
 
     if (move.action === 'play') {
       const lastCombo = this.lastCombo;
@@ -628,8 +603,7 @@ export class TableScene {
 
     // Update Pile
     if (lastCombo) {
-      const rawName = seats[lastCombo.seat_index]?.name || (seats[lastCombo.seat_index]?.is_bot ? 'Bot' : `Seat ${lastCombo.seat_index + 1}`);
-      const pName = `${lastCombo.seat_index + 1} | ${rawName}`;
+      const pName = formatSeatLabel(lastCombo.seat_index, seats[lastCombo.seat_index]);
       this.pileView.setCombo(lastCombo, pName);
 
       // Restrict selection to match target combo length (1 for single, 2 for pair, 5 for 5-card combo)
@@ -723,13 +697,7 @@ export class TableScene {
       ${
         isWaiting
           ? (() => {
-              let hostSeatIndex = -1;
-              for (let i = 0; i < 4; i++) {
-                if (seats[i] && seats[i]?.user_id && !seats[i]?.is_bot) {
-                  hostSeatIndex = i;
-                  break;
-                }
-              }
+              const hostSeatIndex = this.getHostSeatIndex(seats);
               const isHost = this.localSeatIndex === hostSeatIndex;
               const hostName =
                 hostSeatIndex !== -1 && seats[hostSeatIndex]
@@ -1026,17 +994,15 @@ export class TableScene {
 
     const played = [...this.selectedCards];
     try {
-      await playCards(this.game.id, this.localSeatIndex, played);
-      sound.playCardSnap();
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        try { navigator.vibrate(30); } catch (_) {}
+      const ok = await this.controller.executePlay(played);
+      if (ok) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try { navigator.vibrate(30); } catch (_) {}
+        }
+        this.handCards = this.controller.domainHand.cardCodes;
+        this.handFan.setCards(this.handCards);
+        this.handFan.clearSelection();
       }
-      this.handCards = this.handCards.filter((c) => !played.includes(c));
-      this.controller.setLocalHand(this.handCards);
-      this.handFan.setCards(this.handCards);
-      this.handFan.clearSelection();
-    } catch (err: any) {
-      toast.error(err?.message || 'Play rejected by server');
     } finally {
       this.isProcessingMove = false;
       this.updateHudActionState();
@@ -1058,11 +1024,8 @@ export class TableScene {
     this.updateHudActionState();
 
     try {
-      await passTurn(this.game.id, this.localSeatIndex);
-      sound.playPass();
-      this.handFan.clearSelection();
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to pass turn');
+      const ok = await this.controller.executePass();
+      if (ok) this.handFan.clearSelection();
     } finally {
       this.isProcessingMove = false;
       this.updateHudActionState();

@@ -66,6 +66,11 @@ function findHandRecord(gameId, seatIndex, userId, app) {
     return hand;
 }
 
+function effectiveLastCombo(raw) {
+    if (raw && raw.cards && raw.cards.length > 0) return raw;
+    return null;
+}
+
 function recordToDomain(gameRecord) {
     if (!gameRecord) return null;
     var rawSeats = domain.parseJSON(gameRecord.get ? gameRecord.get("seats") : gameRecord.seats, []);
@@ -84,11 +89,11 @@ function recordToDomain(gameRecord) {
     var passCount = gameRecord.getInt ? gameRecord.getInt("pass_count") : (gameRecord.pass_count || 0);
     var leaderIndex = gameRecord.getInt ? gameRecord.getInt("leader_index") : (gameRecord.leader_index || 0);
     var turnIndex = gameRecord.getInt ? gameRecord.getInt("turn_index") : (gameRecord.turn_index || 0);
-    var rawLastCombo = domain.parseJSON(gameRecord.get ? gameRecord.get("last_combo") : gameRecord.last_combo, null);
+    var rawLastCombo = effectiveLastCombo(domain.parseJSON(gameRecord.get ? gameRecord.get("last_combo") : gameRecord.last_combo, null));
 
     var lastCombo = null;
     var lastPlaySeatIndex = leaderIndex;
-    if (rawLastCombo && rawLastCombo.cards && rawLastCombo.cards.length > 0) {
+    if (rawLastCombo) {
         lastCombo = domain.CardCombo.evaluate(rawLastCombo.cards);
         if (typeof rawLastCombo.seat_index === "number") {
             lastPlaySeatIndex = rawLastCombo.seat_index;
@@ -130,7 +135,7 @@ function applyDomainToRecord(domainGame, gameRecord) {
     gameRecord.set("leader_index", domainGame.leaderIndex);
     gameRecord.set("winner_ranks", domainGame.winnerRanks);
 
-    if (domainGame.trick && domainGame.trick.lastCombo && domainGame.trick.lastCombo.cards && domainGame.trick.lastCombo.cards.length > 0) {
+    if (domainGame.trick && effectiveLastCombo(domainGame.trick.lastCombo)) {
         var cardCodes = domainGame.trick.lastCombo.cards.map(function(c) {
             return typeof c === 'number' ? c : c.code;
         });
@@ -203,13 +208,18 @@ function dealAndStartGame(gameRecord, app) {
 }
 
 function findNextActiveSeat(counts, startSeat) {
-    for (var i = 1; i <= 3; i++) {
-        var s = (startSeat + i) % 4;
-        if (counts && counts[s] > 0) {
-            return s;
-        }
-    }
-    return startSeat;
+    return domain.CapsaGame.findNextActiveSeat(counts || [], startSeat);
+}
+
+function clearTrickAndLead(game, winnerSeat, counts) {
+    game.set("last_combo", null);
+    game.set("passed_seats", []);
+    game.set("pass_count", 0);
+    var lead = (counts && counts[winnerSeat] > 0)
+        ? winnerSeat
+        : findNextActiveSeat(counts, winnerSeat);
+    game.set("turn_index", lead);
+    game.set("leader_index", lead);
 }
 
 /**
@@ -288,7 +298,9 @@ function purgeEphemeralData(app) {
 module.exports = {
     dealAndStartGame: dealAndStartGame,
     findNextActiveSeat: findNextActiveSeat,
+    clearTrickAndLead: clearTrickAndLead,
     findHandRecord: findHandRecord,
+    effectiveLastCombo: effectiveLastCombo,
     recordToDomain: recordToDomain,
     applyDomainToRecord: applyDomainToRecord,
     purgeEphemeralData: purgeEphemeralData,

@@ -1,6 +1,6 @@
 import type { GameRecord } from '../net/pb';
 import { rematch, joinRoom, pb } from '../net/pb';
-import { Podium, Seat } from '../domain';
+import { Podium, seatsFromSnapshot } from '../domain';
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 import { escapeHtml } from '../ui/escape';
@@ -39,21 +39,7 @@ export class ResultsScene {
   public async mount(parent: HTMLElement): Promise<void> {
     parent.appendChild(this.container);
 
-    // Determine local player's rank using Podium
-    const seats = (this.game.seats || []).map((s, idx) =>
-      s
-        ? new Seat({
-            index: idx,
-            userId: s.user_id,
-            name: s.name,
-            isBot: s.is_bot,
-            connected: s.connected,
-            cardCount: this.game.counts?.[idx] ?? 0,
-          })
-        : Seat.createEmpty(idx)
-    );
-
-    const podium = new Podium(this.game.winner_ranks || [], this.game.counts || [], seats);
+    const podium = this.buildPodium();
     const localRank = podium.getRank(this.localSeatIndex);
 
     if (localRank === 1) {
@@ -114,21 +100,16 @@ export class ResultsScene {
     }, 1000);
   }
 
-  private render(): void {
-    const seats = (this.game.seats || []).map((s, idx) =>
-      s
-        ? new Seat({
-            index: idx,
-            userId: s.user_id,
-            name: s.name,
-            isBot: s.is_bot,
-            connected: s.connected,
-            cardCount: this.game.counts?.[idx] ?? 0,
-          })
-        : Seat.createEmpty(idx)
+  private buildPodium(): Podium {
+    return new Podium(
+      this.game.winner_ranks || [],
+      this.game.counts || [],
+      seatsFromSnapshot(this.game.seats, this.game.counts)
     );
+  }
 
-    const podium = new Podium(this.game.winner_ranks || [], this.game.counts || [], seats);
+  private render(): void {
+    const podium = this.buildPodium();
     const standings = podium.getStandings();
     const localRank = podium.getRank(this.localSeatIndex);
     const isWinner = localRank === 1;

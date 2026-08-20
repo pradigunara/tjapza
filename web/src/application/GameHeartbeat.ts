@@ -1,17 +1,9 @@
-import { pb } from '../net/pb';
+import { sendTick, type GameRecord } from '../net/pb';
 import { TurnTimer } from '../domain/TurnTimer';
 import { Room } from '../domain/Room';
-import { Seat } from '../domain/Seat';
-import type { GameRecord } from '../net/pb';
+import { seatsFromSnapshot } from '../domain/Seat';
 
-export async function sendTick(gameId: string, seatIndex: number): Promise<void> {
-  await pb.collection('moves').create({
-    game_id: gameId,
-    seat_index: seatIndex >= 0 && seatIndex <= 3 ? seatIndex : 0,
-    action: 'tick',
-    cards: [],
-  });
-}
+export { sendTick };
 
 /**
  * Application Service: Orchestrates client bot heartbeats, queue debounce, and timeouts.
@@ -80,20 +72,7 @@ export class GameHeartbeat {
     const localSeat = this.getLocalSeat();
     if (localSeat < 0 || localSeat > 3) return;
 
-    const counts = game.counts || [13, 13, 13, 13];
-    const seats: Seat[] = (game.seats || []).map((s, idx) =>
-      s
-        ? new Seat({
-            index: idx,
-            userId: s.user_id,
-            name: s.name,
-            isBot: s.is_bot,
-            connected: s.connected,
-            cardCount: counts[idx] ?? 0,
-          })
-        : Seat.createEmpty(idx)
-    );
-
+    const seats = seatsFromSnapshot(game.seats, game.counts || [13, 13, 13, 13]);
     const room = new Room({
       id: game.id,
       code: game.room_code || '',

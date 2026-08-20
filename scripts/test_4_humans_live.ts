@@ -1,5 +1,6 @@
 import PocketBase from '../web/node_modules/pocketbase';
-import { CardCombo, BotEngine, Hand, Trick } from '../web/src/domain';
+import { CardCombo } from '../web/src/domain';
+import { decideBotMoveFromGame } from './lib/botFromGame';
 
 async function runMultiplayerTest() {
   console.log('🎮 Starting 4-Human Simultaneous Multiplayer Test...');
@@ -83,18 +84,7 @@ async function runMultiplayerTest() {
       .collection('hands')
       .getFirstListItem(`game_id="${gameId}" && seat_index=${turn}`);
     const handCards: number[] = handRec.cards;
-
-    const isOpening = !game.last_combo && game.counts.every((c: number) => c === 13);
-    const trick = game.last_combo?.cards?.length > 0
-      ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
-      : Trick.createFresh(turn);
-
-    const decision = BotEngine.decideMove({
-      hand: new Hand(handCards),
-      trick: trick,
-      isOpeningMove: isOpening,
-      counts: game.counts
-    });
+    const decision = decideBotMoveFromGame(game, handCards, turn);
 
     if (decision.action === 'play' && decision.cards.length > 0) {
       const cards = decision.cards.map((c) => c.code);

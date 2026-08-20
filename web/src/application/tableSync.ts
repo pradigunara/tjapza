@@ -7,8 +7,18 @@
  * center pile — that is what makes the winner think they have not won yet.
  */
 
-function hasPile(lastCombo: { cards?: number[] } | null | undefined): boolean {
+export type LastComboLike = { cards?: number[] } | null | undefined;
+
+/** True when the DTO has cards on the center pile. Empty `cards` is no pile. */
+export function hasPile(lastCombo: LastComboLike): boolean {
   return Boolean(lastCombo?.cards?.length);
+}
+
+/** Null when last_combo is missing or has no cards (discarded pile / fresh lead). */
+export function effectiveLastCombo<T extends { cards?: number[] }>(
+  lastCombo: T | null | undefined
+): T | null {
+  return hasPile(lastCombo) ? lastCombo! : null;
 }
 
 function sameCardSet(a: number[], b: number[]): boolean {

@@ -60,7 +60,8 @@ async function runBrowserE2ETest() {
   let turns = 0;
   const maxTurns = 200;
 
-  const { classifyCombo, getBotMove } = await import("../web/src/rules/cards");
+  const { CardCombo } = await import("../web/src/domain");
+  const { decideBotMoveFromGame } = await import("./lib/botFromGame");
 
   while (game.status === "playing" && turns < maxTurns) {
     turns++;
@@ -72,13 +73,10 @@ async function runBrowserE2ETest() {
         `game_id = "${game.id}" && user_id = "${user.id}"`
       );
       const myCards: number[] = handRecord.cards || [];
-      const isOpening = !game.last_combo && game.counts.every((c: number) => c === 13);
-      const otherCounts = game.counts.filter((c: number, idx: number) => idx !== currentTurn && c > 0);
-      const minOther = otherCounts.length > 0 ? Math.min(...otherCounts) : 13;
-
-      const move = getBotMove(myCards, game.last_combo?.cards || game.last_combo, isOpening, minOther);
-      if (move && move.length > 0) {
-        const combo = classifyCombo(move);
+      const decision = decideBotMoveFromGame(game, myCards, currentTurn);
+      if (decision.action === "play" && decision.cards.length > 0) {
+        const move = decision.cards.map((c) => c.code);
+        const combo = CardCombo.evaluate(move);
         console.log(`[Move ${turns}] 👤 Human Seat ${currentTurn} PLAY:`, combo?.type, move);
         await pb.collection("moves").create({
           game_id: game.id,

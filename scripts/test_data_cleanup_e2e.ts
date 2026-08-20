@@ -1,5 +1,5 @@
 import PocketBase from '../web/node_modules/pocketbase';
-import { CardCombo, BotEngine, Hand, Trick } from '../web/src/domain';
+import { decideBotMoveFromGame } from './lib/botFromGame';
 import { spawn } from 'child_process';
 import { resolve } from 'path';
 
@@ -118,15 +118,7 @@ async function runDataCleanupTests() {
         } catch (_) {}
 
         if (handRec && handRec.cards && handRec.cards.length > 0) {
-          const isOpeningTrick = !game.last_combo && game.counts.every((c: number) => c === 13);
-          const move = BotEngine.decideMove({
-            hand: new Hand(handRec.cards),
-            trick: game.last_combo && game.last_combo.cards?.length > 0
-              ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
-              : Trick.createFresh(currentTurn),
-            isOpeningMove: isOpeningTrick,
-            counts: game.counts,
-          });
+          const move = decideBotMoveFromGame(game, handRec.cards, currentTurn);
 
           if (move.action === 'play' && move.cards.length > 0) {
             await p1.pb.collection('moves').create({

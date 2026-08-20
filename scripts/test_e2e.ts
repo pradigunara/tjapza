@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import PocketBase from "../web/node_modules/pocketbase";
-import { CardCombo, BotEngine, Hand, Trick } from "../web/src/domain";
+import { CardCombo } from "../web/src/domain";
+import { decideBotMoveFromGame } from "./lib/botFromGame";
 
 const PB_PORT = 8095;
 const PB_URL = `http://127.0.0.1:${PB_PORT}`;
@@ -89,16 +90,7 @@ async function runE2E() {
           `game_id = "${game.id}" && user_id = "${pb.authStore.record?.id}"`
         );
         const myCards: number[] = handRecord.cards;
-        const isOpeningTrick = !game.last_combo && game.counts.every((c: number) => c === 13);
-
-        const move = BotEngine.decideMove({
-          hand: new Hand(myCards),
-          trick: game.last_combo && game.last_combo.cards?.length > 0
-            ? new Trick({ lastCombo: CardCombo.evaluate(game.last_combo.cards) })
-            : Trick.createFresh(currentTurn),
-          isOpeningMove: isOpeningTrick,
-          counts: game.counts,
-        });
+        const move = decideBotMoveFromGame(game, myCards, currentTurn);
 
         if (move.action === "play" && move.cards.length > 0) {
           const moveCards = move.cards.map((c) => c.code);

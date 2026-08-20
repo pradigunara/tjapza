@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { Room, RoomCode, Seat } from './index';
+import { Room, RoomCode, Seat, seatsFromSnapshot } from './index';
 
 describe('Room & RoomCode & Seat Entities', () => {
   test('RoomCode generates 6-char uppercase unambiguous string and validates', () => {
@@ -33,5 +33,23 @@ describe('Room & RoomCode & Seat Entities', () => {
     const filled = room.withFilledBots();
     expect(filled.isFull).toBe(true);
     expect(filled.botCount).toBe(2);
+  });
+
+  test('seatsFromSnapshot maps DTO seats and counts into four Seat entities', () => {
+    const seats = seatsFromSnapshot(
+      [
+        { user_id: 'u1', name: 'Alice', is_bot: false, connected: true },
+        { user_id: null, name: 'Bot 2', is_bot: true, connected: true },
+        null,
+      ],
+      [10, 13, 0, 7]
+    );
+    expect(seats).toHaveLength(4);
+    expect(seats[0].userId).toBe('u1');
+    expect(seats[0].cardCount).toBe(10);
+    expect(seats[1].isBot).toBe(true);
+    expect(seats[2].isOccupied).toBe(false);
+    expect(seats[3].isOccupied).toBe(false);
+    expect(seats[3].cardCount).toBe(0);
   });
 });
