@@ -39,17 +39,15 @@ export class GameController {
       connected: Boolean(s && s.connected),
     }));
 
-    let lastCombo: CardCombo | null = null;
-    if (dto.last_combo && dto.last_combo.cards && dto.last_combo.cards.length > 0) {
-      lastCombo = CardCombo.evaluate(dto.last_combo.cards);
-    }
+    const rawLastCombo = dto.last_combo?.cards?.length ? dto.last_combo : null;
+    const lastCombo = rawLastCombo ? CardCombo.evaluate(rawLastCombo.cards) : null;
 
     const trick = new Trick({
       lastCombo,
       leaderSeatIndex: dto.leader_index ?? 0,
       passedSeats: dto.passed_seats || [],
       passCount: dto.pass_count ?? 0,
-      lastPlaySeatIndex: dto.last_combo?.seat_index ?? dto.leader_index ?? 0,
+      lastPlaySeatIndex: rawLastCombo?.seat_index ?? dto.leader_index ?? 0,
     });
 
     return new CapsaGame({

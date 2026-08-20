@@ -10,9 +10,11 @@ import {
   startGame,
   subscribeToGame,
   type GameRecord,
+  type LastCombo,
   type MoveRecord,
 } from '../net/pb';
 import { GameController } from '../application/GameController';
+import { isStaleGameSnapshot, shouldShowPlayOnPile } from '../application/tableSync';
 import { HandFan } from '../render/HandFan';
 import { SeatView } from '../render/SeatView';
 import { PileView } from '../render/PileView';
@@ -418,6 +420,12 @@ export class TableScene {
     }
   }
 
+  /** Center pile, or null when the trick is discarded / a fresh lead. */
+  private get lastCombo(): LastCombo | null {
+    const combo = this.game.last_combo;
+    return combo?.cards?.length ? combo : null;
+  }
+
   private getHostSeatIndex(seats: any[]): number {
     const room = new Room({
       code: '',
@@ -437,12 +445,12 @@ export class TableScene {
   }
 
   private async handleGameUpdate(game: GameRecord): Promise<void> {
-    // Monotonic guard: ignore snapshots older than (or equal to) the applied one
+    // Monotonic guard: ignore snapshots strictly older than the applied one.
+    // Equal timestamps still apply so a same-second trick-clear (last_combo
+    // null) is not dropped when bots pass rapidly later in the game.
     if (
       this.game?.id === game.id &&
-      this.game.updated &&
-      game.updated &&
-      game.updated <= this.game.updated
+      isStaleGameSnapshot(this.game.updated, game.updated)
     ) {
       return;
     }
@@ -523,6 +531,21 @@ export class TableScene {
     const seatName = `${move.seat_index + 1} | ${rawName}`;
 
     if (move.action === 'play') {
+      const lastCombo = this.lastCombo;
+      const showOnPile = shouldShowPlayOnPile({
+        lastCombo,
+        moveCards: move.cards || [],
+        moveCreated: move.created,
+        gameUpdated: this.game.updated,
+      });
+
+      if (!showOnPile) {
+        // Trick already discarded (winner is leading again). A late play
+        // SSE from the concluded trick must not resurrect the center pile.
+        if (!lastCombo) this.pileView.clearPile();
+        return;
+      }
+
       const sv = this.seatViews[move.seat_index];
       const origin = sv ? { x: sv.x, y: sv.y } : undefined;
 
@@ -539,6 +562,7 @@ export class TableScene {
     } else if (move.action === 'pass') {
       sound.playPass();
       toast.info(`${seatName} passed`);
+      if (!this.lastCombo) this.pileView.clearPile();
     }
   }
 
@@ -565,7 +589,7 @@ export class TableScene {
     const counts = this.game.counts || [13, 13, 13, 13];
     const winnerRanks = this.game.winner_ranks || [];
     const currentTurn = this.game.turn_index;
-    const lastCombo = this.game.last_combo;
+    const lastCombo = this.lastCombo;
 
     // Check if turn changed to local player for turn chime
     if (currentTurn === this.localSeatIndex && this.lastTurnIndex !== this.localSeatIndex) {
@@ -603,7 +627,7 @@ export class TableScene {
     }
 
     // Update Pile
-    if (lastCombo && lastCombo.cards && lastCombo.cards.length > 0) {
+    if (lastCombo) {
       const rawName = seats[lastCombo.seat_index]?.name || (seats[lastCombo.seat_index]?.is_bot ? 'Bot' : `Seat ${lastCombo.seat_index + 1}`);
       const pName = `${lastCombo.seat_index + 1} | ${rawName}`;
       this.pileView.setCombo(lastCombo, pName);
