@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { CardCombo } from './index';
+// Generated bundle (gitignored): built by `bun run build:domain`, which the
+// `pretest` script runs automatically before `bun run test`.
 // @ts-ignore
 import domainCjs from '../../../pb/pb_hooks/domain.js';
 
