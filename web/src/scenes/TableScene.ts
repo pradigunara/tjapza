@@ -26,7 +26,6 @@ import { toast } from '../ui/toast';
 import { formatSeatLabel } from '../ui/seatLabel';
 import { MoveHistoryModal } from '../ui/MoveHistoryModal';
 import { TableHud, hostSeatIndexFromSeats, type TableHudState } from '../ui/TableHud';
-import { Card } from '../domain';
 
 export interface TableSceneCallbacks {
   onGameFinished: (game: GameRecord, localSeatIndex: number) => void;
@@ -140,12 +139,6 @@ export class TableScene {
       onDeselect: () => {
         sound.playClick();
         this.handFan.clearSelection();
-      },
-      onSort: () => {
-        sound.playClick();
-        this.handCards = Card.sortCodes(this.handCards);
-        this.handFan.setCards(this.handCards);
-        toast.info('Cards sorted');
       },
     });
 

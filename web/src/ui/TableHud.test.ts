@@ -95,7 +95,7 @@ describe('tableHudHtml', () => {
     expect(html).toContain('btn-start-game');
     expect(html).toContain('Ada');
     expect(html).not.toContain('btn-action-play');
-    expect(html).toContain('🔊');
+    expect(html).toContain('icon-sound-on');
   });
 
   test('waiting guest in a private room waits for the host by name', () => {
@@ -161,7 +161,7 @@ describe('tableHudHtml', () => {
 
   test('muted flag swaps the sound icon', () => {
     const html = tableHudHtml(hudState({ soundMuted: true }));
-    expect(html).toContain('🔇');
-    expect(html).not.toContain('🔊');
+    expect(html).toContain('icon-sound-off');
+    expect(html).not.toContain('icon-sound-on');
   });
 });

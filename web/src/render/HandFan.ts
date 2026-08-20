@@ -300,9 +300,6 @@ export class HandFan extends Container {
       } else if (e.code === 'KeyH') {
         e.preventDefault();
         this.onHintRequested?.();
-      } else if (e.code === 'KeyS') {
-        e.preventDefault();
-        this.setCards(this.rawCards);
       }
     });
   }

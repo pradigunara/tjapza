@@ -10,6 +10,16 @@ import {
 import type { SeatInfo } from '../net/pb';
 import { escapeHtml } from './escape';
 
+const ICONS = {
+  copy: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+  history: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>`,
+  soundOn: `<svg class="icon-sound-on" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`,
+  soundOff: `<svg class="icon-sound-off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`,
+  leave: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+  timer: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
+  fastForward: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>`,
+};
+
 export interface TableHudGame {
   status: 'waiting' | 'playing' | 'finished';
   room_code: string;
@@ -42,7 +52,6 @@ export interface TableHudCallbacks {
   onPass: () => void;
   onHint: () => void;
   onDeselect: () => void;
-  onSort: () => void;
 }
 
 export function hostSeatIndexFromSeats(seats: TableHudGame['seats']): number {
@@ -82,7 +91,7 @@ export function tableHudHtml(state: TableHudState): string {
           <div class="room-code-badge" id="btn-copy-code" title="Click to copy Room Code">
             <span class="badge-label">ROOM</span>
             <span class="badge-code">${game.room_code || '---'}</span>
-            <span class="badge-copy-icon">📋</span>
+            <span class="badge-copy-icon">${ICONS.copy}</span>
           </div>
         </div>
 
@@ -94,16 +103,15 @@ export function tableHudHtml(state: TableHudState): string {
           }
 
           <button id="btn-table-history" class="btn-icon" title="View Move History">
-            <span>📜</span>
+            ${ICONS.history}
           </button>
 
           <button id="btn-table-sound" class="btn-icon" title="Toggle Sound">
-            <span>${soundMuted ? '🔇' : '🔊'}</span>
+            ${soundMuted ? ICONS.soundOff : ICONS.soundOn}
           </button>
 
           <button id="btn-leave-table" class="btn-icon btn-leave" title="Leave Table">
-            <span class="leave-text-desktop">Leave</span>
-            <span class="leave-icon-mobile">✕</span>
+            ${ICONS.leave}
           </button>
         </div>
       </div>
@@ -120,9 +128,6 @@ export function tableHudHtml(state: TableHudState): string {
 
           <div class="table-action-bar ${isMyTurn ? 'is-my-turn' : ''}">
             <div class="action-utility-group">
-              <button id="btn-action-sort" class="btn-hud-action btn-sort" title="Sort Hand (S)">
-                <span>Sort</span>
-              </button>
               <button id="btn-action-deselect" class="btn-hud-action" title="Clear Selection (D)">
                 <span>Clear</span>
               </button>
@@ -151,15 +156,15 @@ function playingTimerHtml(game: TableHudGame): string {
   const domainSeats = seatsFromSnapshot(game.seats, game.counts);
   if (!hasActiveHuman(domainSeats)) {
     return `
-                      <div class="turn-timer-hud" style="background: rgba(234, 179, 8, 0.2); border-color: rgba(234, 179, 8, 0.5);" title="Fast Forwarding Bot Turns">
-                        <span class="timer-icon">⏩</span>
-                        <span class="timer-text" style="color: #fde047;">Fast Forward</span>
+                      <div class="turn-timer-hud is-fast-forward" title="Fast Forwarding Bot Turns">
+                        <span class="timer-icon">${ICONS.fastForward}</span>
+                        <span class="timer-text">Fast Forward</span>
                       </div>
                     `;
   }
   return `
                     <div class="turn-timer-hud" title="Turn Timer">
-                      <span class="timer-icon">⏱️</span>
+                      <span class="timer-icon">${ICONS.timer}</span>
                       <span class="timer-text" id="turn-timer-text">${TURN_TIMEOUT_SECS}s</span>
                       <div class="timer-progress-track">
                         <div class="timer-progress-bar" id="turn-timer-bar"></div>
@@ -196,7 +201,7 @@ function waitingOverlayHtml(
                       Seat ${idx + 1}
                       ${isSeatHost ? '<span class="host-badge" title="Room Host">👑 Host</span>' : ''}
                     </div>
-                    <div class="waiting-seat-avatar">${occupied ? escapeHtml(s.name.charAt(0).toUpperCase()) : '👤'}</div>
+                    <div class="waiting-seat-avatar">${occupied ? escapeHtml(s.name.charAt(0).toUpperCase()) : ''}</div>
                     <div class="waiting-seat-name">${occupied ? escapeHtml(s.name) : 'Waiting…'}</div>
                   </div>
                 `;
@@ -335,6 +340,5 @@ export class TableHud {
     $('#btn-action-pass')?.addEventListener('click', () => c.onPass());
     $('#btn-action-hint')?.addEventListener('click', () => c.onHint());
     $('#btn-action-deselect')?.addEventListener('click', () => c.onDeselect());
-    $('#btn-action-sort')?.addEventListener('click', () => c.onSort());
   }
 }

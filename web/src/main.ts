@@ -27,7 +27,7 @@ class TjapzaApp {
     // 1. Initialize PixiJS v8 Application
     await this.app.init({
       resizeTo: window,
-      backgroundColor: 0x07130e,
+      backgroundColor: 0x140a08,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
       antialias: true,

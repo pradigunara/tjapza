@@ -1,4 +1,5 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
+import { Theme, UI_FONT } from './theme';
 
 export type SeatPosition = 'bottom' | 'top' | 'left' | 'right' | 'top_arc';
 
@@ -54,7 +55,7 @@ export class SeatView extends Container {
     this.addChild(this.avatarIconGfx);
 
     const avatarTextStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 16,
       fontWeight: '800',
       fill: '#ffffff',
@@ -69,7 +70,7 @@ export class SeatView extends Container {
     this.nameContainer.addChild(this.nameBg);
 
     const nameStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 11.5,
       fontWeight: '700',
       fill: '#f8fafc',
@@ -85,7 +86,7 @@ export class SeatView extends Container {
     this.turnBadge.addChild(this.turnBadgeBg);
 
     const turnBadgeStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 9.5,
       fontWeight: '800',
       fill: '#0f172a',
@@ -105,7 +106,7 @@ export class SeatView extends Container {
     this.cardFanContainer.addChild(this.countBadgeBg);
 
     const countStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 11,
       fontWeight: '800',
       fill: '#ffffff',
@@ -121,7 +122,7 @@ export class SeatView extends Container {
     this.statusBadge.addChild(this.statusBg);
 
     const statusStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 10,
       fontWeight: '800',
       fill: '#fca5a5',
@@ -138,7 +139,7 @@ export class SeatView extends Container {
     this.rankBadge.addChild(this.rankBg);
 
     const rankStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 11,
       fontWeight: '800',
       fill: '#ffffff',
@@ -149,7 +150,7 @@ export class SeatView extends Container {
     this.rankBadge.visible = false;
     this.addChild(this.rankBadge);
 
-    this.drawAvatar(0x334155);
+    this.drawAvatar(Theme.humanFill);
   }
 
   public setPlayerInfo(
@@ -181,7 +182,7 @@ export class SeatView extends Container {
       this.avatarText.text = initial;
     }
 
-    const bgColor = isBot ? 0x1e293b : this.isLocal ? 0x0369a1 : 0x065f46;
+    const bgColor = isBot ? Theme.botFill : this.isLocal ? Theme.localFill : Theme.humanFill;
     this.drawAvatar(bgColor);
     this.relayout();
   }
@@ -192,19 +193,17 @@ export class SeatView extends Container {
     // Vector Robot Persona (No Emoji)
     // Head unit
     this.avatarIconGfx.roundRect(-8, -6, 16, 12, 3);
-    this.avatarIconGfx.fill({ color: 0x334155 });
-    this.avatarIconGfx.stroke({ width: 1.2, color: 0x38bdf8, alpha: 0.9 });
+    this.avatarIconGfx.fill({ color: 0x1c3d32 });
+    this.avatarIconGfx.stroke({ width: 1.2, color: Theme.botStroke, alpha: 0.95 });
 
-    // Glowing Cyan Visor / Eyes
     this.avatarIconGfx.roundRect(-5.5, -3, 11, 4, 1.5);
-    this.avatarIconGfx.fill({ color: 0x38bdf8 });
+    this.avatarIconGfx.fill({ color: Theme.goldBright });
 
-    // Antenna
     this.avatarIconGfx.moveTo(0, -6);
     this.avatarIconGfx.lineTo(0, -10);
-    this.avatarIconGfx.stroke({ width: 1.5, color: 0x38bdf8 });
+    this.avatarIconGfx.stroke({ width: 1.5, color: Theme.botStroke });
     this.avatarIconGfx.circle(0, -11, 2);
-    this.avatarIconGfx.fill({ color: 0xf59e0b });
+    this.avatarIconGfx.fill({ color: Theme.gold });
   }
 
   public setCardCount(count: number): void {
@@ -301,7 +300,11 @@ export class SeatView extends Container {
     this.avatarCircle.fill({ color: bgColor });
 
     // Beveled metallic border
-    const strokeColor = this.isLocal ? 0x38bdf8 : this.isBotPlayer ? 0x64748b : 0x34d399;
+    const strokeColor = this.isLocal
+      ? Theme.localStroke
+      : this.isBotPlayer
+        ? Theme.botStroke
+        : Theme.humanStroke;
     this.avatarCircle.stroke({ width: 2, color: strokeColor, alpha: 0.85 });
   }
 

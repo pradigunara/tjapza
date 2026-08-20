@@ -45,11 +45,11 @@ export class TurnTimer {
     return this.getRemainingMs(nowMs) <= 0;
   }
 
-  public getStatusColor(nowMs: number = Date.now()): '#22c55e' | '#f59e0b' | '#ef4444' {
+  public getStatusColor(nowMs: number = Date.now()): '#d4af37' | '#f59e0b' | '#ef4444' {
     const secs = this.getRemainingSecs(nowMs);
-    if (secs <= 10) return '#ef4444'; // Red
-    if (secs <= 25) return '#f59e0b'; // Amber
-    return '#22c55e'; // Green
+    if (secs <= 10) return '#ef4444';
+    if (secs <= 25) return '#f59e0b';
+    return '#d4af37';
   }
 
   public static createDefault(): TurnTimer {

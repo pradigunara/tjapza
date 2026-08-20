@@ -60,7 +60,7 @@ export class LobbyScene {
         <!-- Top Navbar -->
         <header class="lobby-header">
           <div class="lobby-brand">
-            <div class="logo-emblem">♠</div>
+            <div class="logo-emblem">2</div>
             <div class="brand-text">
               <h1 class="brand-title">TJAPZA</h1>
               <span class="brand-sub">Capsa Banting · Big Two</span>
@@ -77,7 +77,7 @@ export class LobbyScene {
               ${
                 isMuted
                   ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>`
-                  : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`
+                  : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#d4af37" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>`
               }
             </button>
 
@@ -134,7 +134,7 @@ export class LobbyScene {
             <div class="lobby-card card-join">
               <div class="card-body">
                 <div class="card-icon-wrap">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#d4af37" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>
                 </div>
                 <h2 class="card-title">Join Room</h2>
                 <p class="card-desc">Enter a 6-character room code provided by your friend.</p>
@@ -156,7 +156,7 @@ export class LobbyScene {
 
         <!-- Footer Info -->
         <footer class="lobby-footer">
-          <span>Tjapza Capsa Banting · Authoritative PocketBase + PixiJS v8 Engine</span>
+          <span>Capsa Banting · Play with friends, or fill empty seats with bots</span>
         </footer>
       </div>
 

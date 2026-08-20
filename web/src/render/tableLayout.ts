@@ -1,5 +1,6 @@
 import type { Graphics } from 'pixi.js';
 import type { SeatPosition } from './SeatView';
+import { Theme } from './theme';
 
 export interface TableBounds {
   x: number;
@@ -90,15 +91,22 @@ export function computeTableLayout(
   const tableW = Math.min(width * 0.94, 1140);
   const tableH = Math.min(height * 0.88, 740);
   const tableRadius = Math.min(tableW, tableH) * 0.28;
-  const seatMarginX = isMobile ? 35 : 70;
+  const tableBounds = {
+    x: cx - tableW / 2,
+    y: cy - tableH / 2,
+    w: tableW,
+    h: tableH,
+    r: tableRadius,
+  };
+  const sideInset = isMobile ? 32 : 40;
   const seatMarginY = isMobile ? 45 : 60;
   const localY = height - (isMobile ? 120 : 145);
 
   const landscapeByRel: SeatPlacement[] = [
     { visible: true, layout: 'bottom', x: cx, y: localY },
-    { visible: true, layout: 'left', x: seatMarginX, y: cy - 20 },
+    { visible: true, layout: 'left', x: tableBounds.x + sideInset, y: cy - 20 },
     { visible: true, layout: 'top', x: cx, y: seatMarginY + 20 },
-    { visible: true, layout: 'right', x: width - seatMarginX, y: cy - 20 },
+    { visible: true, layout: 'right', x: tableBounds.x + tableBounds.w - sideInset, y: cy - 20 },
   ];
 
   const seats: SeatPlacement[] = [0, 1, 2, 3].map((i) => {
@@ -113,13 +121,7 @@ export function computeTableLayout(
     isMobile,
     cx,
     cy,
-    tableBounds: {
-      x: cx - tableW / 2,
-      y: cy - tableH / 2,
-      w: tableW,
-      h: tableH,
-      r: tableRadius,
-    },
+    tableBounds,
     pile: { x: cx, y: cy - (isMobile ? 15 : 20) },
     seats,
   };
@@ -133,47 +135,47 @@ export function drawTableFelt(g: Graphics, layout: TableLayout): void {
 
   g.clear();
   g.rect(0, 0, width, height);
-  g.fill({ color: 0x05120d });
+  g.fill({ color: Theme.lacquer });
 
   if (isPortrait) {
     g.roundRect(cx - tableW / 2 - 4, feltCy - tableH / 2 - 4, tableW + 8, tableH + 8, tableRadius + 4);
-    g.fill({ color: 0x0a1c14 });
-    g.stroke({ width: 2, color: 0x143425 });
+    g.fill({ color: Theme.rosewoodDeep });
+    g.stroke({ width: 2, color: Theme.cinnabar, alpha: 0.35 });
 
     g.roundRect(cx - tableW / 2, feltCy - tableH / 2, tableW, tableH, tableRadius);
-    g.fill({ color: 0x07271a });
-    g.stroke({ width: 2, color: 0xd97706, alpha: 0.75 });
+    g.fill({ color: Theme.clothDeep });
+    g.stroke({ width: 2, color: Theme.gold, alpha: 0.8 });
 
     g.roundRect(cx - tableW / 2 + 6, feltCy - tableH / 2 + 6, tableW - 12, tableH - 12, tableRadius - 4);
-    g.stroke({ width: 1, color: 0x104d33, alpha: 0.6 });
+    g.stroke({ width: 1, color: Theme.cinnabar, alpha: 0.35 });
 
     g.circle(cx, pile.y, tableW * 0.26);
-    g.fill({ color: 0x093020, alpha: 0.5 });
-    g.stroke({ width: 1.2, color: 0x15803d, alpha: 0.35 });
+    g.fill({ color: Theme.cloth, alpha: 0.55 });
+    g.stroke({ width: 1.2, color: Theme.gold, alpha: 0.35 });
 
     g.circle(cx, pile.y, tableW * 0.24);
-    g.stroke({ width: 0.8, color: 0xd97706, alpha: 0.25 });
+    g.stroke({ width: 0.8, color: Theme.cinnabar, alpha: 0.28 });
     return;
   }
 
   g.roundRect(cx - tableW / 2 - 6, feltCy - tableH / 2 - 6, tableW + 12, tableH + 12, tableRadius + 4);
-  g.fill({ color: 0x0a1c14 });
-  g.stroke({ width: 2, color: 0x143425 });
+  g.fill({ color: Theme.rosewoodDeep });
+  g.stroke({ width: 2, color: Theme.cinnabar, alpha: 0.35 });
 
   g.roundRect(cx - tableW / 2, feltCy - tableH / 2, tableW, tableH, tableRadius);
-  g.fill({ color: 0x07271a });
-  g.stroke({ width: 3, color: 0xd97706, alpha: 0.8 });
+  g.fill({ color: Theme.clothDeep });
+  g.stroke({ width: 3, color: Theme.gold, alpha: 0.85 });
 
   g.roundRect(cx - tableW / 2 + 8, feltCy - tableH / 2 + 8, tableW - 16, tableH - 16, tableRadius - 6);
-  g.stroke({ width: 1, color: 0x104d33, alpha: 0.5 });
+  g.stroke({ width: 1, color: Theme.cinnabar, alpha: 0.3 });
 
   const centerR = Math.min(tableW, tableH) * 0.24;
   g.circle(cx, feltCy, centerR);
-  g.fill({ color: 0x093020, alpha: 0.5 });
-  g.stroke({ width: 1.2, color: 0x15803d, alpha: 0.35 });
+  g.fill({ color: Theme.cloth, alpha: 0.55 });
+  g.stroke({ width: 1.2, color: Theme.gold, alpha: 0.35 });
 
   g.circle(cx, feltCy, centerR - 6);
-  g.stroke({ width: 0.8, color: 0xd97706, alpha: 0.25 });
+  g.stroke({ width: 0.8, color: Theme.cinnabar, alpha: 0.28 });
 }
 
 export function pulseTurnGlow(
@@ -190,11 +192,11 @@ export function pulseTurnGlow(
 
     g.clear();
     g.roundRect(x - 8, y - 8, w + 16, h + 16, r + 6);
-    g.stroke({ width: 4, color: 0xf59e0b, alpha: glowAlpha * 0.35 });
+    g.stroke({ width: 4, color: Theme.cinnabar, alpha: glowAlpha * 0.3 });
     g.roundRect(x - 1, y - 1, w + 2, h + 2, r + 1);
-    g.stroke({ width: 3.5, color: 0xfbbf24, alpha: glowAlpha * 0.95 });
+    g.stroke({ width: 3.5, color: Theme.goldBright, alpha: glowAlpha * 0.95 });
     g.roundRect(x + 6, y + 6, w - 12, h - 12, r - 4);
-    g.stroke({ width: 1.5, color: 0xfde047, alpha: glowAlpha * 0.55 });
+    g.stroke({ width: 1.5, color: Theme.gold, alpha: glowAlpha * 0.55 });
     return next;
   }
 

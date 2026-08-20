@@ -11,7 +11,7 @@ describe('TurnTimer Value Object', () => {
     expect(timer.getRemainingSecs(now)).toBe(30);
     expect(timer.getProgress(now)).toBeCloseTo(0.5);
     expect(timer.isExpired(now)).toBe(false);
-    expect(timer.getStatusColor(now)).toBe('#22c55e'); // > 25s = Green
+    expect(timer.getStatusColor(now)).toBe('#d4af37');
 
     // 52s elapsed (8s left) -> Red
     const expiredTimer = new TurnTimer(now - 52000, 60000);

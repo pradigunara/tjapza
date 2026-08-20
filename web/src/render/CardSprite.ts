@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
 import { Card } from '../domain';
+import { Theme, UI_FONT } from './theme';
 
 export const CARD_WIDTH = 76;
 export const CARD_HEIGHT = 108;
@@ -180,10 +181,11 @@ export class CardSprite extends Container {
       this.cardGraphics.roundRect(3, 3, CARD_WIDTH - 6, CARD_HEIGHT - 6, CARD_RADIUS - 2);
       this.cardGraphics.stroke({ width: 0.6, color: 0xe5e2da, alpha: 0.7 });
     } else {
-      // Midnight royal blue casino card back
       this.cardGraphics.roundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, CARD_RADIUS);
-      this.cardGraphics.fill({ color: 0x0f172a });
-      this.cardGraphics.stroke({ width: 1.2, color: 0x334155 });
+      this.cardGraphics.fill({ color: Theme.cinnabar });
+      this.cardGraphics.stroke({ width: 1.2, color: Theme.gold });
+      this.cardGraphics.roundRect(5, 5, CARD_WIDTH - 10, CARD_HEIGHT - 10, CARD_RADIUS - 2);
+      this.cardGraphics.stroke({ width: 0.8, color: Theme.gold, alpha: 0.7 });
     }
 
     // 3. Selection & Hover Rim Illumination
@@ -198,7 +200,7 @@ export class CardSprite extends Container {
       this.selectionGlow.stroke({ width: 2.5, color: 0xf59e0b, alpha: 0.95 });
     } else if (isDesktopHover && this.faceUp) {
       this.selectionGlow.roundRect(-1.5, -1.5, CARD_WIDTH + 3, CARD_HEIGHT + 3, CARD_RADIUS + 1.5);
-      this.selectionGlow.stroke({ width: 2, color: 0x38bdf8, alpha: 0.75 });
+      this.selectionGlow.stroke({ width: 2, color: Theme.cardHover, alpha: 0.8 });
     }
   }
 
@@ -207,7 +209,7 @@ export class CardSprite extends Container {
     const textColor = card.isRed ? '#b91c1c' : '#0f172a';
 
     const rankStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 15.5,
       fontWeight: '800',
       fill: textColor,
@@ -215,7 +217,7 @@ export class CardSprite extends Container {
     });
 
     const suitStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 13,
       fontWeight: 'bold',
       fill: textColor,
@@ -403,7 +405,7 @@ export class CardSprite extends Container {
       this.centerArtContainer.addChild(starGfx);
 
       const suitStyle = new TextStyle({
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontFamily: UI_FONT,
         fontSize: 34,
         fontWeight: 'bold',
         fill: textColor,
@@ -415,7 +417,7 @@ export class CardSprite extends Container {
     } else if (isAce) {
       // Ace of Spades / Suits: Elegant large emblem
       const suitStyle = new TextStyle({
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontFamily: UI_FONT,
         fontSize: 38,
         fontWeight: 'bold',
         fill: textColor,
@@ -434,7 +436,7 @@ export class CardSprite extends Container {
     } else {
       // Standard Number Cards
       const suitStyle = new TextStyle({
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontFamily: UI_FONT,
         fontSize: 32,
         fontWeight: 'bold',
         fill: textColor,

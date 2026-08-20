@@ -1,5 +1,6 @@
 import { Container, Graphics, Rectangle, Text, TextStyle } from 'pixi.js';
 import { CardSprite } from './CardSprite';
+import { UI_FONT } from './theme';
 import type { LastCombo } from '../net/pb';
 import { sound } from '../audio/sound';
 import { CardCombo } from '../domain';
@@ -48,7 +49,7 @@ export class PileView extends Container {
     this.bannerContainer.addChild(this.bannerBg);
 
     const titleStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 12,
       fontWeight: '800',
       fill: '#fde047',
@@ -59,7 +60,7 @@ export class PileView extends Container {
     this.bannerContainer.addChild(this.bannerTitle);
 
     const subtitleStyle = new TextStyle({
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontFamily: UI_FONT,
       fontSize: 10,
       fontWeight: '600',
       fill: '#94a3b8',

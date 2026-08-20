@@ -10,7 +10,7 @@
 - 🃏 **Complete Capsa Banting Rules Engine**: 52-card standard deck, ascending 10-straight hierarchy (`A-2-3-4-5` to `J-Q-K-A-2`), rank-first flush comparison, 5-card combo hierarchy (`Straight Flush > Quads > Full House > Flush > Straight`), and mandatory 3♦ opener.
 - 🤖 **Deterministic Greedy Bot AI**: Smart heuristics that conserve high cards ($\ge$ K, 2s) unless in late-game danger ($\le$ 3 cards), lead combos first, and play minimal winning combinations.
 - ⚡ **Authoritative Realtime State**: Server-side rule validation, private hand isolation (`user_id = @request.auth.id`), atomic database transactions, dynamic host ticker failover, and anti-griefing timeout protection.
-- 🎨 **PixiJS v8 Vector Table**: Crisp vector-rendered cards, curved bottom hand fan with drag/click selection and keyboard shortcuts (`Space` to Play, `P` to Pass, `H` to Hint, `D` to Clear, `S` to Sort), active turn glow rings, and procedural Web Audio synthesizers.
+- 🎨 **PixiJS v8 Vector Table**: Crisp vector-rendered cards, curved bottom hand fan with drag/click selection and keyboard shortcuts (`Space` to Play, `P` to Pass, `H` to Hint, `D` to Clear), active turn glow rings, and procedural Web Audio synthesizers.
 - 🌐 **Multiplayer & Matchmaking**: 6-character private friend rooms with shareable invite links, public quickplay queue, and 30s post-game rematch flow.
 
 ---

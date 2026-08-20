@@ -16,7 +16,8 @@ describe('computeTableLayout', () => {
 
     expect(layout.seats[0].x).toBe(500);
     expect(layout.seats[2].x).toBe(500);
-    expect(layout.seats[1].x).toBeLessThan(layout.seats[3].x);
+    expect(layout.seats[1].x).toBeCloseTo(layout.tableBounds.x + 40);
+    expect(layout.seats[3].x).toBeCloseTo(layout.tableBounds.x + layout.tableBounds.w - 40);
     expect(layout.pile.x).toBe(500);
     expect(layout.pile.y).toBe(350 - 20);
   });
@@ -56,13 +57,18 @@ describe('computeTableLayout', () => {
     expect(layout.seats[0].x).toBeCloseTo(390 * 0.82);
   });
 
-  test('landscape mobile uses tighter seat margins', () => {
+  test('landscape side seats hug the table rail, including on wide screens', () => {
     const desktop = computeTableLayout(1000, 700, 0);
     const mobile = computeTableLayout(600, 360, 0);
+    const wide = computeTableLayout(1920, 1080, 0);
+
     expect(mobile.isPortrait).toBe(false);
     expect(mobile.isMobile).toBe(true);
-    expect(mobile.seats[1].x).toBe(35);
-    expect(desktop.seats[1].x).toBe(70);
+    expect(mobile.seats[1].x).toBeCloseTo(mobile.tableBounds.x + 32);
+    expect(desktop.seats[1].x).toBeCloseTo(desktop.tableBounds.x + 40);
+    expect(wide.seats[1].x).toBeCloseTo(wide.tableBounds.x + 40);
+    expect(wide.seats[3].x).toBeCloseTo(wide.tableBounds.x + wide.tableBounds.w - 40);
+    expect(wide.seats[1].x).toBeGreaterThan(300);
     expect(mobile.seats[0].y).toBeGreaterThan(mobile.pile.y);
   });
 });
