@@ -24,6 +24,7 @@ export interface GameContextForLLM {
   opponentCounts: number[];
   isOpeningMove: boolean;
   isFreshTrick: boolean;
+  seatIndex?: number;
 }
 
 export interface RawLLMDecision {

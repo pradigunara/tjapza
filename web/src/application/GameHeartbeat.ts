@@ -154,6 +154,7 @@ export class GameHeartbeat {
                   opponentCounts: game.counts || [13, 13, 13, 13],
                   isOpeningMove: isOpening,
                   isFreshTrick: isFresh,
+                  seatIndex: currentTurn,
                 },
                 { timeoutMs: 5000 }
               );

@@ -424,26 +424,17 @@ button.loading {
   margin: 0 auto 1.5rem auto;
   background: var(--surface-panel);
   border: 1px solid var(--surface-panel-border);
-  border-radius: 16px;
-  padding: 0.9rem 1.4rem;
+  border-radius: 12px;
+  padding: 0.65rem 1.2rem;
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  align-items: center;
   backdrop-filter: blur(12px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(212, 175, 55, 0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(212, 175, 55, 0.12);
   transition: all 0.2s ease;
 }
 
 .lobby-ai-banner:hover {
   border-color: rgba(212, 175, 55, 0.55);
-}
-
-.ai-banner-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
 }
 
 .ai-toggle-label {
@@ -760,12 +751,13 @@ button.loading {
 .table-ai-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  justify-content: center;
   background: var(--surface-panel);
   border: 1px solid var(--gold-400);
   border-radius: 10px;
-  padding: 0 0.55rem;
+  width: 32px;
   height: 32px;
+  padding: 0;
   box-sizing: border-box;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 10px rgba(212, 175, 55, 0.2);
   user-select: none;
@@ -773,18 +765,11 @@ button.loading {
 }
 
 .badge-ai-icon {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   line-height: 1;
   display: inline-flex;
   align-items: center;
-}
-
-.badge-ai-text {
-  font-size: 0.75rem;
-  font-weight: 800;
-  color: var(--gold-300);
-  letter-spacing: 0.08em;
-  line-height: 1;
+  justify-content: center;
 }
 
 .table-status-pill {
