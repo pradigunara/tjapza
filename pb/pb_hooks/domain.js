@@ -1340,7 +1340,7 @@ var TurnTimer = class _TurnTimer {
     const secs = this.getRemainingSecs(nowMs);
     if (secs <= 10) return "#ef4444";
     if (secs <= 25) return "#f59e0b";
-    return "#22c55e";
+    return "#d4af37";
   }
   static createDefault() {
     return new _TurnTimer(Date.now(), TURN_TIMEOUT_MS);

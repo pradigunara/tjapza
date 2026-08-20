@@ -384,7 +384,7 @@ export class TableScene {
     if (game.status === 'playing') {
       const currentTurnSeat = game.seats?.[game.turn_index];
       if (currentTurnSeat?.is_bot) {
-        this.heartbeat?.triggerImmediate(900);
+        this.heartbeat?.triggerBotTurn();
       }
     }
 
@@ -554,7 +554,7 @@ export class TableScene {
       if (this.game.status === 'playing') {
         const currentTurnSeat = this.game.seats?.[this.game.turn_index];
         if (currentTurnSeat?.is_bot) {
-          this.heartbeat?.triggerImmediate(900);
+          this.heartbeat?.triggerBotTurn();
         }
       }
     } catch (err: any) {

@@ -3,6 +3,9 @@ import { TurnTimer } from '../domain/TurnTimer';
 import { Room } from '../domain/Room';
 import { hasActiveHuman, seatsFromSnapshot } from '../domain/Seat';
 
+/** Bot tick pacing when no active humans remain (Fast Forward mode). */
+export const FAST_FORWARD_TICK_DELAY_MS = 100;
+
 /**
  * Application Service: Orchestrates client bot heartbeats, queue debounce, and timeouts.
  */
@@ -11,6 +14,7 @@ export class GameHeartbeat {
   private timer: number | null = null;
   private isTicking = false;
   private pendingTickTimer: number | null = null;
+  private pendingTickAt = 0;
   private hasPendingNextTick = false;
   private getGameState: () => GameRecord | null;
   private getLocalSeat: () => number;
@@ -43,6 +47,7 @@ export class GameHeartbeat {
       clearTimeout(this.pendingTickTimer);
       this.pendingTickTimer = null;
     }
+    this.pendingTickAt = 0;
   }
 
   public triggerImmediate(delayMs = 900): void {
@@ -50,13 +55,35 @@ export class GameHeartbeat {
       this.hasPendingNextTick = true;
       return;
     }
+    const deadline = Date.now() + delayMs;
     if (this.pendingTickTimer) {
+      // Monotonic deadlines: a new trigger may only tighten a scheduled
+      // tick, never push it out. Without this, the SSE turn-change poke
+      // (900ms) would cancel and replace the pending fast-forward tick,
+      // throttling bot-only endgames back to ~1 move/s.
+      if (this.pendingTickAt <= deadline) return;
       clearTimeout(this.pendingTickTimer);
     }
+    this.pendingTickAt = deadline;
     this.pendingTickTimer = window.setTimeout(() => {
       this.pendingTickTimer = null;
+      this.pendingTickAt = 0;
       this.tick();
     }, delayMs);
+  }
+
+  /**
+   * Turn-change poke (SSE game update / post-start): fast-forward tables
+   * resolve bot turns at the fast cadence instead of the 900ms default.
+   */
+  public triggerBotTurn(): void {
+    this.triggerImmediate(this.isFastForward() ? FAST_FORWARD_TICK_DELAY_MS : 900);
+  }
+
+  private isFastForward(): boolean {
+    const game = this.getGameState();
+    if (!game || game.status !== 'playing') return false;
+    return !hasActiveHuman(seatsFromSnapshot(game.seats, game.counts || [13, 13, 13, 13]));
   }
 
   private async tick(): Promise<void> {
@@ -114,7 +141,7 @@ export class GameHeartbeat {
         this.isTicking = false;
         if (tickSuccess) {
           if (isPrimary) {
-            const delay = isBotOnlyRemaining ? 250 : 900;
+            const delay = isBotOnlyRemaining ? FAST_FORWARD_TICK_DELAY_MS : 900;
             this.triggerImmediate(delay);
           } else if (this.hasPendingNextTick) {
             this.hasPendingNextTick = false;
