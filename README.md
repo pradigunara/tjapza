@@ -73,7 +73,7 @@ Open **`http://127.0.0.1:8090`** in your browser to play!
 ## Testing
 
 ```bash
-# Run unit test suite (93 tests across TypeScript & ES5 engines)
+# Run unit test suite (112 tests across TypeScript & ES5 engines)
 bun test
 
 # Run End-to-End integration test
