@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { Room, RoomCode, Seat, seatsFromSnapshot } from './index';
+import { Room, RoomCode, Seat, seatsFromSnapshot, hasActiveHuman } from './index';
 
 describe('Room & RoomCode & Seat Entities', () => {
   test('RoomCode generates 6-char uppercase unambiguous string and validates', () => {
@@ -51,5 +51,29 @@ describe('Room & RoomCode & Seat Entities', () => {
     expect(seats[2].isOccupied).toBe(false);
     expect(seats[3].isOccupied).toBe(false);
     expect(seats[3].cardCount).toBe(0);
+  });
+
+  test('hasActiveHuman is true only for humans with cards remaining', () => {
+    const withCards = seatsFromSnapshot(
+      [
+        { user_id: 'u1', name: 'Alice', is_bot: false, connected: true },
+        { user_id: null, name: 'Bot 2', is_bot: true, connected: true },
+        null,
+        null,
+      ],
+      [5, 13, 0, 0]
+    );
+    expect(hasActiveHuman(withCards)).toBe(true);
+
+    const finishedHuman = seatsFromSnapshot(
+      [
+        { user_id: 'u1', name: 'Alice', is_bot: false, connected: true },
+        { user_id: null, name: 'Bot 2', is_bot: true, connected: true },
+        null,
+        null,
+      ],
+      [0, 8, 0, 0]
+    );
+    expect(hasActiveHuman(finishedHuman)).toBe(false);
   });
 });

@@ -82,20 +82,12 @@ export class GameController {
 
   // --- Getters ---
 
-  public get domainGame(): CapsaGame {
-    return this.game;
-  }
-
   public get domainHand(): Hand {
     return this.localHand;
   }
 
   public get isMyTurn(): boolean {
     return this.game.status === 'playing' && this.game.turnIndex === this.localSeatIndex;
-  }
-
-  public get isOpeningMove(): boolean {
-    return this.game.isOpeningMove;
   }
 
   // --- Actions & Validation ---
@@ -118,15 +110,14 @@ export class GameController {
       return { valid: false, reason: 'Cards are not in your hand.' };
     }
 
-    if (this.game.isOpeningMove && !combo.containsCardCode(CARD_3D)) {
-      return { valid: false, reason: 'Opening play must contain 3♦.' };
-    }
-
-    if (this.game.trick.lastCombo && !combo.canBeat(this.game.trick.lastCombo)) {
-      return { valid: false, reason: `Cannot beat ${this.game.trick.lastCombo.description}.` };
-    }
-
     if (!this.game.canPlay(selectedCodes, this.localSeatIndex, this.localHand.cardCodes)) {
+      if (this.game.isOpeningMove && !combo.containsCardCode(CARD_3D)) {
+        return { valid: false, reason: 'Opening play must contain 3♦.' };
+      }
+      const lastCombo = this.game.trick.lastCombo;
+      if (lastCombo && !combo.canBeat(lastCombo)) {
+        return { valid: false, reason: `Cannot beat ${lastCombo.description}.` };
+      }
       return { valid: false, reason: 'Cannot play those cards now.' };
     }
 
@@ -174,7 +165,10 @@ export class GameController {
 
   public async executePlay(selectedCodes: number[]): Promise<boolean> {
     const check = this.canPlayCards(selectedCodes);
-    if (!check.valid) return false;
+    if (!check.valid) {
+      toast.error(check.reason || 'Invalid move');
+      return false;
+    }
 
     try {
       await playCards(this.game.id, this.localSeatIndex, selectedCodes);
@@ -189,7 +183,10 @@ export class GameController {
 
   public async executePass(): Promise<boolean> {
     const check = this.canPassTurn();
-    if (!check.valid) return false;
+    if (!check.valid) {
+      toast.warning(check.reason || 'Cannot pass');
+      return false;
+    }
 
     try {
       await passTurn(this.game.id, this.localSeatIndex);

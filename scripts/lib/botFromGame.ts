@@ -1,4 +1,5 @@
 import { BotEngine, CardCombo, Hand, Trick, type BotDecision } from '../../web/src/domain';
+import { effectiveLastCombo } from '../../web/src/application/tableSync';
 
 /** PocketBase game snapshot fields the bot needs to choose a move. */
 export interface GameBotSnapshot {
@@ -15,11 +16,8 @@ export function decideBotMoveFromGame(
   myCards: number[],
   currentTurn: number
 ): BotDecision {
-  const lastComboCards = game.last_combo?.cards;
-  const lastCombo =
-    lastComboCards && lastComboCards.length > 0
-      ? CardCombo.evaluate(lastComboCards)
-      : null;
+  const lastComboDto = effectiveLastCombo(game.last_combo);
+  const lastCombo = lastComboDto ? CardCombo.evaluate(lastComboDto.cards) : null;
   const trick = lastCombo
     ? new Trick({ lastCombo })
     : Trick.createFresh(currentTurn);

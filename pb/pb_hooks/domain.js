@@ -77,6 +77,7 @@ __export(index_exports, {
   TURN_TIMEOUT_SECS: () => TURN_TIMEOUT_SECS,
   Trick: () => Trick,
   TurnTimer: () => TurnTimer,
+  hasActiveHuman: () => hasActiveHuman,
   parseJSON: () => parseJSON,
   seatsFromSnapshot: () => seatsFromSnapshot,
   shouldPurgeHand: () => shouldPurgeHand
@@ -915,9 +916,6 @@ var Trick = class _Trick {
       lastPlaySeatIndex: this.lastPlaySeatIndex
     });
   }
-  reset(newLeaderSeatIndex) {
-    return _Trick.createFresh(newLeaderSeatIndex);
-  }
 };
 
 // src/domain/BotEngine.ts
@@ -1274,22 +1272,33 @@ var CapsaGame = class _CapsaGame {
       counts: this.counts,
       seatIndex: this.turnIndex
     });
-    if (decision.action === "play") {
-      const nextGame = this.applyPlay(decision.cards, this.turnIndex);
+    if (decision.action === "pass" && this.trick.isFresh && !hand.isEmpty) {
+      const forcedCard = this.isOpeningMove && hand.containsCode(CARD_3D) ? new Card(CARD_3D) : hand.cards[0];
+      const cards = [forcedCard];
+      const combo = CardCombo.evaluate(cards);
+      const nextGame2 = this.applyPlay(cards, this.turnIndex);
       return {
-        nextGame,
+        nextGame: nextGame2,
+        action: "play",
+        cards,
+        combo
+      };
+    }
+    if (decision.action === "play") {
+      const nextGame2 = this.applyPlay(decision.cards, this.turnIndex);
+      return {
+        nextGame: nextGame2,
         action: "play",
         cards: decision.cards,
         combo: decision.combo
       };
-    } else {
-      const nextGame = this.applyPass(this.turnIndex);
-      return {
-        nextGame,
-        action: "pass",
-        cards: []
-      };
     }
+    const nextGame = this.applyPass(this.turnIndex);
+    return {
+      nextGame,
+      action: "pass",
+      cards: []
+    };
   }
 };
 
@@ -1467,6 +1476,9 @@ function seatsFromSnapshot(seats, counts) {
     );
   }
   return out;
+}
+function hasActiveHuman(seats) {
+  return seats.some((s) => s.isHuman && s.cardCount > 0);
 }
 
 // src/domain/Room.ts

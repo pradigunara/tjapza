@@ -408,8 +408,3 @@ export function subscribeToGame(
   };
 }
 
-// -----------------------------------------------------------------------------
-// Heartbeat Loop (Re-exported from Application Layer)
-// -----------------------------------------------------------------------------
-
-export { GameHeartbeat } from '../application/GameHeartbeat';

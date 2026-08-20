@@ -1,9 +1,7 @@
 import { sendTick, type GameRecord } from '../net/pb';
 import { TurnTimer } from '../domain/TurnTimer';
 import { Room } from '../domain/Room';
-import { seatsFromSnapshot } from '../domain/Seat';
-
-export { sendTick };
+import { hasActiveHuman, seatsFromSnapshot } from '../domain/Seat';
 
 /**
  * Application Service: Orchestrates client bot heartbeats, queue debounce, and timeouts.
@@ -85,8 +83,7 @@ export class GameHeartbeat {
     const isBotTurn = currentSeat ? currentSeat.isBot : false;
 
     // Check if remaining active players are all bots (Fast Forward)
-    const hasActiveHuman = seats.some((s) => s.isHuman && s.cardCount > 0);
-    const isBotOnlyRemaining = !hasActiveHuman;
+    const isBotOnlyRemaining = !hasActiveHuman(seats);
 
     // Check if human turn has timed out using TurnTimer
     const timer = new TurnTimer(game.turn_started_at);

@@ -211,17 +211,6 @@ function findNextActiveSeat(counts, startSeat) {
     return domain.CapsaGame.findNextActiveSeat(counts || [], startSeat);
 }
 
-function clearTrickAndLead(game, winnerSeat, counts) {
-    game.set("last_combo", null);
-    game.set("passed_seats", []);
-    game.set("pass_count", 0);
-    var lead = (counts && counts[winnerSeat] > 0)
-        ? winnerSeat
-        : findNextActiveSeat(counts, winnerSeat);
-    game.set("turn_index", lead);
-    game.set("leader_index", lead);
-}
-
 function persistNewResults(txApp, gameId, prevRanks, nextRanks, seats) {
     var seen = {};
     for (var i = 0; i < (prevRanks || []).length; i++) {
@@ -243,6 +232,23 @@ function persistNewResults(txApp, gameId, prevRanks, nextRanks, seats) {
             is_bot: !!(info && info.is_bot)
         }));
     }
+}
+
+function persistAppliedGame(txApp, game, prevRanks, nextGame, seats) {
+    persistNewResults(txApp, game.id, prevRanks, nextGame.winnerRanks, seats);
+    applyDomainToRecord(nextGame, game);
+    if (nextGame.status === "playing") {
+        game.set("turn_started_at", new Date().toISOString());
+    }
+    var postRec = domain.CapsaGame.reconcile(nextGame);
+    if (postRec.healed) {
+        applyDomainToRecord(postRec.game, game);
+    }
+    txApp.save(game);
+}
+
+function authDisplayName(auth, fallback) {
+    return auth.get("display_name") || auth.get("name") || auth.get("email") || fallback || "Player";
 }
 
 /**
@@ -321,10 +327,10 @@ function purgeEphemeralData(app) {
 module.exports = {
     dealAndStartGame: dealAndStartGame,
     findNextActiveSeat: findNextActiveSeat,
-    clearTrickAndLead: clearTrickAndLead,
     persistNewResults: persistNewResults,
+    persistAppliedGame: persistAppliedGame,
+    authDisplayName: authDisplayName,
     findHandRecord: findHandRecord,
-    effectiveLastCombo: effectiveLastCombo,
     recordToDomain: recordToDomain,
     applyDomainToRecord: applyDomainToRecord,
     purgeEphemeralData: purgeEphemeralData,

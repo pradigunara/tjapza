@@ -11,6 +11,7 @@
 routerAdd("POST", "/api/tjapza/room/create", (c) => {
     try {
         var domain = require(__hooks + "/domain.js");
+        var gameService = require(__hooks + "/game_service.js");
         var auth = c.auth;
         if (!auth) {
             return c.unauthorizedError("Authentication required to create a room");
@@ -21,7 +22,7 @@ routerAdd("POST", "/api/tjapza/room/create", (c) => {
         var isPublic = !!body.is_public;
 
         var roomCode = domain.RoomCode.generate().value;
-        var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player 1";
+        var displayName = gameService.authDisplayName(auth, "Player 1");
 
         var seat0 = {
             user_id: auth.id,
@@ -64,6 +65,7 @@ routerAdd("POST", "/api/tjapza/room/create", (c) => {
 routerAdd("POST", "/api/tjapza/room/join", (c) => {
     try {
         var domain = require(__hooks + "/domain.js");
+        var gameService = require(__hooks + "/game_service.js");
         var auth = c.auth;
         if (!auth) {
             return c.unauthorizedError("Authentication required to join a room");
@@ -96,7 +98,7 @@ routerAdd("POST", "/api/tjapza/room/join", (c) => {
             }
 
             var seats = domain.parseJSON(game.get("seats"), []);
-            var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
+            var displayName = gameService.authDisplayName(auth, "Player");
 
             // Check if user is already seated (e.g. page reload, reconnect, rematch)
             for (var i = 0; i < 4; i++) {
@@ -278,7 +280,7 @@ routerAdd("POST", "/api/tjapza/quickplay", (c) => {
             return c.unauthorizedError("Authentication required for quickplay");
         }
 
-        var displayName = auth.get("display_name") || auth.get("name") || auth.get("email") || "Player";
+        var displayName = gameService.authDisplayName(auth, "Player");
 
         // 1. Find public waiting games
         var openGames = [];
@@ -599,12 +601,18 @@ onRecordCreateRequest((e) => {
             }
 
             var counts = domainGame.counts;
-            var lastCombo = domainGame.trick.lastCombo;
             var seats = domain.parseJSON(game.get("seats"), []);
             var currentSeat = seats[currentTurn];
             var turnStartedAt = game.getString("turn_started_at");
-            var isOpeningMove = domainGame.isOpeningMove;
             var currentHandRecord = null;
+
+            function assertSeatAuth(actionVerb) {
+                if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
+                    if (currentSeat.user_id !== e.auth.id) {
+                        throw new ForbiddenError("You are not authorized to " + actionVerb + " for this seat");
+                    }
+                }
+            }
 
             // 2. Handle TICK Action (Bot move or turn timer timeout auto-play)
             if (action === "tick") {
@@ -638,40 +646,30 @@ onRecordCreateRequest((e) => {
                 }
 
                 var botHandCards = domain.parseJSON(currentHandRecord.get("cards"), []);
-                var botMove = domain.BotEngine.decideMove({
-                    hand: new domain.Hand(botHandCards),
-                    trick: domainGame.trick,
-                    isOpeningMove: isOpeningMove,
-                    counts: counts,
-                    seatIndex: currentTurn
-                });
-
-                action = botMove.action;
+                var botResult = domainGame.applyBotTurn(botHandCards);
+                action = botResult.action;
                 seatIndex = currentTurn;
-
-                // Prevent bot from ever attempting to pass when leading or opening
-                if (action === "pass" && (!lastCombo || isOpeningMove)) {
-                    if (botHandCards.length > 0) {
-                        action = "play";
-                        var forcedCard = isOpeningMove && botHandCards.indexOf(domain.CARD_3D) !== -1
-                            ? domain.CARD_3D
-                            : botHandCards[0];
-                        cardsPlayed = [forcedCard];
-                    }
-                }
-
                 moveRecord.set("seat_index", currentTurn);
                 moveRecord.set("action", action);
-
+                var prevRanks = (domainGame.winnerRanks || []).slice();
                 if (action === "play") {
-                    if (!cardsPlayed || cardsPlayed.length === 0) {
-                        cardsPlayed = botMove.cards.map(function(c) { return typeof c === 'number' ? c : c.code; });
+                    cardsPlayed = botResult.cards.map(function(c) { return typeof c === "number" ? c : c.code; });
+                    var remaining = botHandCards.filter(function(card) { return cardsPlayed.indexOf(card) === -1; });
+                    currentHandRecord.set("cards", domain.Card.sortCodes(remaining));
+                    txApp.save(currentHandRecord);
+                    if (botResult.combo) {
+                        moveRecord.set("combo_type", botResult.combo.type);
+                        moveRecord.set("combo_power", botResult.combo.power);
                     }
-                    moveRecord.set("cards", cardsPlayed);
+                    moveRecord.set("cards", domain.Card.sortCodes(cardsPlayed));
                 } else {
-                    cardsPlayed = [];
                     moveRecord.set("cards", []);
+                    moveRecord.set("combo_type", "");
+                    moveRecord.set("combo_power", 0);
                 }
+                domainGame = botResult.nextGame;
+                gameService.persistAppliedGame(txApp, game, prevRanks, domainGame, seats);
+                return; // end the transaction callback — do not fall through into human play/pass
             }
 
             // 3. Handle PLAY Action
@@ -685,19 +683,9 @@ onRecordCreateRequest((e) => {
                     throw new BadRequestError("Not your turn to play");
                 }
 
-                // If direct human action (not an automated tick), verify authentication matches seat
-                if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
-                    if (currentSeat.user_id !== e.auth.id) {
-                        throw new ForbiddenError("You are not authorized to play for this seat");
-                    }
-                }
+                assertSeatAuth("play");
 
-                // Fetch player hand
-                if (isAutomatedMove && currentHandRecord) {
-                    playerHandRecord = currentHandRecord;
-                } else {
-                    playerHandRecord = gameService.findHandRecord(gameId, seatIndex, currentSeat ? currentSeat.user_id : (e.auth ? e.auth.id : null), txApp);
-                }
+                playerHandRecord = gameService.findHandRecord(gameId, seatIndex, currentSeat ? currentSeat.user_id : (e.auth ? e.auth.id : null), txApp);
 
                 if (!playerHandRecord) {
                     console.error("[HAND_NOT_FOUND_DEBUG] gameId: " + gameId + " seatIndex: " + seatIndex + " currentTurn: " + currentTurn + " auth: " + (e.auth ? e.auth.id : "none"));
@@ -726,19 +714,18 @@ onRecordCreateRequest((e) => {
                     }
                 }
 
-                // Opening move check: must include 3 of Diamonds (code 0)
-                if (isOpeningMove && cardsPlayed.indexOf(domain.CARD_3D) === -1) {
-                    throw new BadRequestError("Opening move must include 3 of Diamonds (3♦)");
-                }
-
                 // Evaluate combo using Domain
                 playedCombo = domain.CardCombo.evaluate(cardsPlayed);
                 if (!playedCombo) {
                     throw new BadRequestError("Invalid card combination");
                 }
 
-                if (lastCombo && !playedCombo.canBeat(lastCombo)) {
-                    throw new BadRequestError("Played combination does not beat the current pile");
+                if (!domainGame.canPlay(cardsPlayed, seatIndex, playerHandCards)) {
+                    if (domainGame.isOpeningMove && cardsPlayed.indexOf(domain.CARD_3D) === -1)
+                        throw new BadRequestError("Opening move must include 3 of Diamonds (3♦)");
+                    if (domainGame.trick.lastCombo && playedCombo && !playedCombo.canBeat(domainGame.trick.lastCombo))
+                        throw new BadRequestError("Played combination does not beat the current pile");
+                    throw new BadRequestError("Invalid play");
                 }
 
                 // Set combo fields on move record
@@ -751,21 +738,13 @@ onRecordCreateRequest((e) => {
                     throw new BadRequestError("Not your turn to pass");
                 }
 
-                // If direct human action, verify auth
-                if (!isAutomatedMove && e.auth && currentSeat && !currentSeat.is_bot) {
-                    if (currentSeat.user_id !== e.auth.id) {
-                        throw new ForbiddenError("You are not authorized to pass for this seat");
-                    }
-                }
+                assertSeatAuth("pass");
 
-                // Cannot pass when leading a trick
-                if (!lastCombo) {
-                    throw new BadRequestError("Cannot pass when leading a trick");
-                }
-
-                // Cannot pass on opening move
-                if (isOpeningMove) {
-                    throw new BadRequestError("Cannot pass on the opening move of the game");
+                if (!domainGame.canPass(seatIndex)) {
+                    if (domainGame.trick.isFresh) throw new BadRequestError("Cannot pass when leading a trick");
+                    if (domainGame.isOpeningMove) throw new BadRequestError("Cannot pass on the opening move of the game");
+                    if (domainGame.trick.hasPlayerPassed(seatIndex)) throw new BadRequestError("You have already passed in this trick");
+                    throw new BadRequestError("Cannot pass");
                 }
 
                 moveRecord.set("cards", []);
@@ -793,18 +772,7 @@ onRecordCreateRequest((e) => {
                 throw new BadRequestError(applyErr && applyErr.message ? applyErr.message : String(applyErr));
             }
 
-            gameService.persistNewResults(txApp, game.id, prevRanks, domainGame.winnerRanks, seats);
-            gameService.applyDomainToRecord(domainGame, game);
-            if (domainGame.status === "playing") {
-                game.set("turn_started_at", new Date().toISOString());
-            }
-
-            var postRec = domain.CapsaGame.reconcile(domainGame);
-            if (postRec.healed) {
-                gameService.applyDomainToRecord(postRec.game, game);
-            }
-
-            txApp.save(game);
+            gameService.persistAppliedGame(txApp, game, prevRanks, domainGame, seats);
         });
 
         if (isNoOpTick) {

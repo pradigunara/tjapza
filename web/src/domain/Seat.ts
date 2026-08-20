@@ -114,3 +114,7 @@ export function seatsFromSnapshot(
   }
   return out;
 }
+
+export function hasActiveHuman(seats: Seat[]): boolean {
+  return seats.some((s) => s.isHuman && s.cardCount > 0);
+}

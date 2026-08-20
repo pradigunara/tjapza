@@ -503,6 +503,83 @@ describe('CapsaGame State Machine & Self-Healing Reconciliation', () => {
     });
   });
 
+  describe('applyBotTurn', () => {
+    test('on opening with 3♦ in hand plays a combo containing 3♦ (never pass)', () => {
+      const game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 0,
+        leaderIndex: 0,
+        counts: [13, 13, 13, 13],
+        trick: Trick.createFresh(0),
+      });
+
+      const hand = [
+        Card.fromString('3♦'),
+        Card.fromString('5♠'),
+        Card.fromString('7♥'),
+        Card.fromString('9♣'),
+      ];
+      const result = game.applyBotTurn(hand);
+
+      expect(result.action).toBe('play');
+      expect(result.cards.some((c) => c.code === Card.fromString('3♦').code)).toBe(true);
+      expect(result.combo).toBeDefined();
+      expect(result.nextGame.counts[0]).toBe(13 - result.cards.length);
+      expect(result.nextGame.turnIndex).toBe(1);
+    });
+
+    test('on a fresh trick (not opening) with cards never returns pass', () => {
+      const game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 1,
+        leaderIndex: 1,
+        counts: [10, 10, 10, 10],
+        trick: Trick.createFresh(1),
+      });
+
+      const hand = [
+        Card.fromString('4♦'),
+        Card.fromString('6♠'),
+        Card.fromString('8♥'),
+      ];
+      const result = game.applyBotTurn(hand);
+
+      expect(result.action).toBe('play');
+      expect(result.cards.length).toBeGreaterThan(0);
+      expect(result.combo).toBeDefined();
+      expect(result.nextGame.trick.isFresh).toBe(false);
+    });
+
+    test('when it cannot beat lastCombo returns pass and advances via applyPass', () => {
+      const lastCombo = CardCombo.evaluate([Card.fromString('2♠')]);
+      const game = new CapsaGame({
+        status: 'playing',
+        turnIndex: 2,
+        leaderIndex: 0,
+        counts: [8, 8, 8, 8],
+        trick: new Trick({
+          lastCombo,
+          leaderSeatIndex: 0,
+          lastPlaySeatIndex: 0,
+          passedSeats: [],
+        }),
+      });
+
+      // Hand with only low singles — cannot beat 2♠
+      const hand = [
+        Card.fromString('4♦'),
+        Card.fromString('5♠'),
+        Card.fromString('6♥'),
+      ];
+      const result = game.applyBotTurn(hand);
+
+      expect(result.action).toBe('pass');
+      expect(result.cards).toEqual([]);
+      expect(result.nextGame.trick.hasPlayerPassed(2)).toBe(true);
+      expect(result.nextGame.turnIndex).toBe(3);
+    });
+  });
+
   describe('Scenario F: Synthetic & Highly Corrupt State Reconciliation', () => {
     test('Vector 1: Out-of-bounds turnIndex (e.g. 5) is safely healed to next active seat', () => {
       const corruptGame = new CapsaGame({

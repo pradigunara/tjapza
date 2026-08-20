@@ -360,6 +360,22 @@ export class CapsaGame {
       seatIndex: this.turnIndex,
     });
 
+    if (decision.action === 'pass' && this.trick.isFresh && !hand.isEmpty) {
+      const forcedCard =
+        this.isOpeningMove && hand.containsCode(CARD_3D)
+          ? new Card(CARD_3D)
+          : hand.cards[0];
+      const cards = [forcedCard];
+      const combo = CardCombo.evaluate(cards)!;
+      const nextGame = this.applyPlay(cards, this.turnIndex);
+      return {
+        nextGame,
+        action: 'play',
+        cards,
+        combo,
+      };
+    }
+
     if (decision.action === 'play') {
       const nextGame = this.applyPlay(decision.cards, this.turnIndex);
       return {
@@ -368,13 +384,13 @@ export class CapsaGame {
         cards: decision.cards,
         combo: decision.combo,
       };
-    } else {
-      const nextGame = this.applyPass(this.turnIndex);
-      return {
-        nextGame,
-        action: 'pass',
-        cards: [],
-      };
     }
+
+    const nextGame = this.applyPass(this.turnIndex);
+    return {
+      nextGame,
+      action: 'pass',
+      cards: [],
+    };
   }
 }

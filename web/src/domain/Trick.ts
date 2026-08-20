@@ -108,8 +108,4 @@ export class Trick {
       lastPlaySeatIndex: this.lastPlaySeatIndex,
     });
   }
-
-  public reset(newLeaderSeatIndex: number): Trick {
-    return Trick.createFresh(newLeaderSeatIndex);
-  }
 }

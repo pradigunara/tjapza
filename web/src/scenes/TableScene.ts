@@ -1,6 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import {
-  GameHeartbeat,
   getCurrentUser,
   fetchGame,
   fetchMoves,
@@ -11,8 +10,13 @@ import {
   type LastCombo,
   type MoveRecord,
 } from '../net/pb';
-import { GameController } from '../application/GameController';
-import { effectiveLastCombo, isStaleGameSnapshot, shouldShowPlayOnPile } from '../application/tableSync';
+import {
+  GameHeartbeat,
+  GameController,
+  effectiveLastCombo,
+  isStaleGameSnapshot,
+  shouldShowPlayOnPile,
+} from '../application';
 import { HandFan } from '../render/HandFan';
 import { SeatView } from '../render/SeatView';
 import { PileView } from '../render/PileView';
@@ -26,6 +30,7 @@ import {
   CardCombo,
   Room,
   seatsFromSnapshot,
+  hasActiveHuman,
   TurnTimer,
   PUBLIC_LOBBY_AUTOSTART_MS,
   TURN_TIMEOUT_SECS,
@@ -628,8 +633,7 @@ export class TableScene {
 
   private renderHud(): void {
     const isWaiting = this.game.status === 'waiting';
-    const isMyTurn =
-      this.game.status === 'playing' && this.game.turn_index === this.localSeatIndex;
+    const isMyTurn = this.controller.isMyTurn;
 
     const seats = this.game.seats || [];
 
@@ -648,16 +652,8 @@ export class TableScene {
           ${
             this.game.status === 'playing'
               ? (() => {
-                  const counts = this.game.counts || [13, 13, 13, 13];
-                  let hasActiveHuman = false;
-                  for (let s = 0; s < 4; s++) {
-                    const st = seats[s];
-                    if (st && !st.is_bot && st.user_id && counts[s] > 0) {
-                      hasActiveHuman = true;
-                      break;
-                    }
-                  }
-                  if (!hasActiveHuman) {
+                  const domainSeats = seatsFromSnapshot(this.game.seats, this.game.counts);
+                  if (!hasActiveHuman(domainSeats)) {
                     return `
                       <div class="turn-timer-hud" style="background: rgba(234, 179, 8, 0.2); border-color: rgba(234, 179, 8, 0.5);" title="Fast Forwarding Bot Turns">
                         <span class="timer-icon">⏩</span>
@@ -893,8 +889,7 @@ export class TableScene {
   }
 
   private updateHudActionState(): void {
-    const isMyTurn =
-      this.game.status === 'playing' && this.game.turn_index === this.localSeatIndex;
+    const isMyTurn = this.controller.isMyTurn;
 
     const btnPlay = this.hudContainer.querySelector('#btn-action-play') as HTMLButtonElement;
     const btnPass = this.hudContainer.querySelector('#btn-action-pass') as HTMLButtonElement;
@@ -983,12 +978,6 @@ export class TableScene {
   private async handlePlayAction(): Promise<void> {
     if (this.isProcessingMove) return;
 
-    const check = this.controller.canPlayCards(this.selectedCards);
-    if (!check.valid) {
-      toast.error(check.reason || 'Invalid move');
-      return;
-    }
-
     this.isProcessingMove = true;
     this.updateHudActionState();
 
@@ -1013,12 +1002,6 @@ export class TableScene {
 
   private async handlePassAction(): Promise<void> {
     if (this.isProcessingMove) return;
-
-    const check = this.controller.canPassTurn();
-    if (!check.valid) {
-      toast.warning(check.reason || 'Cannot pass');
-      return;
-    }
 
     this.isProcessingMove = true;
     this.updateHudActionState();
@@ -1054,8 +1037,7 @@ export class TableScene {
     this.handFan.update(delta);
 
     // Pulse table edge with luxury casino gold glow when it is the local player's turn
-    const isMyTurn =
-      this.game?.status === 'playing' && this.game?.turn_index === this.localSeatIndex;
+    const isMyTurn = this.controller.isMyTurn;
 
     if (isMyTurn && this.tableBounds.w > 0) {
       this.tablePulseTime += 0.08 * delta;
