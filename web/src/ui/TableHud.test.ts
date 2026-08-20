@@ -164,4 +164,15 @@ describe('tableHudHtml', () => {
     expect(html).toContain('icon-sound-off');
     expect(html).not.toContain('icon-sound-on');
   });
+
+  test('renders AI host badge when isAiReady is true', () => {
+    const html = tableHudHtml(hudState({ isAiReady: true }));
+    expect(html).toContain('table-ai-badge');
+    expect(html).toContain('🧠 AI Host');
+  });
+
+  test('does not render AI host badge when isAiReady is false or undefined', () => {
+    const html = tableHudHtml(hudState({ isAiReady: false }));
+    expect(html).not.toContain('table-ai-badge');
+  });
 });

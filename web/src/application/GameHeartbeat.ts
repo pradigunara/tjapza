@@ -1,7 +1,8 @@
-import { sendTick, type GameRecord } from '../net/pb';
+import { sendTick, fetchPlayerHand, playMove, type GameRecord } from '../net/pb';
 import { TurnTimer } from '../domain/TurnTimer';
 import { Room } from '../domain/Room';
 import { hasActiveHuman, seatsFromSnapshot } from '../domain/Seat';
+import { modelManager } from '../ai/ModelManager';
 
 /** Bot tick pacing when no active humans remain (Fast Forward mode). */
 export const FAST_FORWARD_TICK_DELAY_MS = 100;
@@ -18,15 +19,18 @@ export class GameHeartbeat {
   private hasPendingNextTick = false;
   private getGameState: () => GameRecord | null;
   private getLocalSeat: () => number;
+  private getDomainGame?: () => any;
 
   constructor(
     gameId: string,
     getGameState: () => GameRecord | null,
-    getLocalSeat: () => number
+    getLocalSeat: () => number,
+    getDomainGame?: () => any
   ) {
     this.gameId = gameId;
     this.getGameState = getGameState;
     this.getLocalSeat = getLocalSeat;
+    this.getDomainGame = getDomainGame;
   }
 
   public start(): void {
@@ -131,8 +135,43 @@ export class GameHeartbeat {
       let tickSuccess = false;
 
       try {
-        await sendTick(this.gameId, currentTurn);
-        tickSuccess = true;
+        if (isBotTurn && isPrimary && modelManager.isReady()) {
+          try {
+            const botHandCards = await fetchPlayerHand(this.gameId, currentTurn);
+            if (botHandCards && botHandCards.length > 0) {
+              const domainGame = this.getDomainGame ? this.getDomainGame() : null;
+              const trick = domainGame?.trick;
+              const isOpening = domainGame?.isOpeningMove ?? false;
+              const isFresh = trick?.isFresh ?? true;
+              const lastCombo = isFresh ? undefined : trick?.lastCombo;
+
+              console.log(`[AI Host 🧠] Turn triggered for Bot Seat ${currentTurn} (${currentSeat.name}). Cards: ${botHandCards.length}`);
+
+              const decision = await modelManager.generateDecision(
+                {
+                  handCards: botHandCards,
+                  trickCombo: lastCombo,
+                  opponentCounts: game.counts || [13, 13, 13, 13],
+                  isOpeningMove: isOpening,
+                  isFreshTrick: isFresh,
+                },
+                { timeoutMs: 4500 }
+              );
+
+              const playedCards = decision.action === 'play' ? decision.cards : [];
+              console.log(`[AI Host 🧠] Dispatching move to server: ${decision.action} [${playedCards.join(', ')}] (source: ${decision.source})`);
+              await playMove(this.gameId, currentTurn, decision.action, playedCards);
+              tickSuccess = true;
+            }
+          } catch (aiErr) {
+            console.debug('AI host move failed, falling back to server tick:', aiErr);
+          }
+        }
+
+        if (!tickSuccess) {
+          await sendTick(this.gameId, currentTurn);
+          tickSuccess = true;
+        }
       } catch (err: any) {
         if (err?.status !== 400) {
           console.debug('Heartbeat tick notice:', err?.message || err);

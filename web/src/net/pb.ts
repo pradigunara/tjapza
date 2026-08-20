@@ -1,12 +1,7 @@
 import PocketBase, { LocalAuthStore, type RecordModel } from 'pocketbase';
 
 // Base URL detection: use environment variable or relative in production, fallback to 8090 in dev
-const PB_URL =
-  ((import.meta as any).env && (import.meta as any).env.VITE_PB_URL) ||
-  (typeof window !== 'undefined' &&
-  (window.location.port === '3000' || window.location.port === '5173')
-    ? 'http://127.0.0.1:8090'
-    : '/');
+const PB_URL = ((import.meta as any).env && (import.meta as any).env.VITE_PB_URL) || '/';
 
 function getSessionStorageKey(): string {
   if (typeof window === 'undefined') return 'pb_auth';
@@ -315,6 +310,20 @@ export async function fetchMoves(gameId: string): Promise<MoveRecord[]> {
   } catch (err) {
     return [];
   }
+}
+
+export async function playMove(
+  gameId: string,
+  seatIndex: number,
+  action: 'play' | 'pass',
+  cards: number[] = []
+): Promise<MoveRecord> {
+  return await pb.collection('moves').create<MoveRecord>({
+    game_id: gameId,
+    seat_index: seatIndex,
+    action,
+    cards: action === 'play' ? cards : [],
+  });
 }
 
 export async function playCards(

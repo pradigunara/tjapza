@@ -86,6 +86,10 @@ export class GameController {
     return this.localHand;
   }
 
+  public get domainGame(): CapsaGame {
+    return this.game;
+  }
+
   public get isMyTurn(): boolean {
     return this.game.status === 'playing' && this.game.turnIndex === this.localSeatIndex;
   }

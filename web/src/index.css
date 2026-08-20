@@ -407,10 +407,164 @@ button.loading {
 .lobby-main {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 2.5rem 0;
+  padding: 2rem 0;
+}
+
+/* ==========================================================================
+   ADVANCED AI BOT BANNER & CONTROLS
+   ========================================================================== */
+
+.lobby-ai-banner {
+  width: 100%;
+  max-width: 1050px;
+  margin: 0 auto 1.5rem auto;
+  background: var(--surface-panel);
+  border: 1px solid var(--surface-panel-border);
+  border-radius: 16px;
+  padding: 0.9rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(212, 175, 55, 0.15);
+  transition: all 0.2s ease;
+}
+
+.lobby-ai-banner:hover {
+  border-color: rgba(212, 175, 55, 0.55);
+}
+
+.ai-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.ai-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-main);
+  transition: color 0.15s ease;
+}
+
+.ai-toggle-label:hover {
+  color: var(--gold-100);
+}
+
+.ai-toggle-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--gold-400);
+  border-radius: 4px;
+  background: rgba(20, 10, 8, 0.85);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.ai-toggle-label input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, #c4453a 0%, var(--cinnabar-deep) 100%);
+  border-color: var(--gold-300);
+  box-shadow: 0 0 8px rgba(184, 50, 42, 0.6);
+}
+
+.ai-toggle-label input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--gold-100);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.ai-toggle-label input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--gold-400);
+  outline-offset: 2px;
+}
+
+.ai-badge-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.18) 0%, rgba(184, 50, 42, 0.18) 100%);
+  border: 1px solid var(--gold-400);
+  color: var(--gold-300);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.25);
+  animation: ai-pulse-glow 2.5s infinite alternate ease-in-out;
+}
+
+@keyframes ai-pulse-glow {
+  0% {
+    box-shadow: 0 0 6px rgba(212, 175, 55, 0.2);
+    border-color: rgba(212, 175, 55, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 14px rgba(212, 175, 55, 0.45);
+    border-color: var(--gold-300);
+  }
+}
+
+.ai-download-bar-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ai-download-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+}
+
+.ai-stage-label {
+  color: var(--text-muted);
+}
+
+.ai-progress-numbers {
+  color: var(--gold-400);
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.ai-progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(15, 7, 5, 0.8);
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.ai-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c4453a 0%, var(--gold-500) 50%, var(--gold-300) 100%);
+  border-radius: 4px;
+  transition: width 0.25s ease-out;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.5);
 }
 
 .lobby-cards-grid {
@@ -597,6 +751,23 @@ button.loading {
   color: var(--gold-300);
   letter-spacing: 0.16em;
   font-variant-numeric: tabular-nums;
+}
+
+.table-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--surface-panel);
+  border: 1px solid var(--gold-400);
+  color: var(--gold-300);
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 12px;
+  padding: 0.32rem 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 0 10px rgba(212, 175, 55, 0.2);
+  letter-spacing: 0.02em;
+  user-select: none;
+  backdrop-filter: blur(12px);
 }
 
 .table-status-pill {

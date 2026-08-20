@@ -15,9 +15,17 @@ import {
 import { sound } from '../audio/sound';
 import { toast } from '../ui/toast';
 import { escapeHtml } from '../ui/escape';
+import { modelManager } from '../ai/ModelManager';
+import type { ModelProgress, ModelStatus } from '../ai/types';
 
 export interface LobbyCallbacks {
   onGameJoined: (game: GameRecord, localSeatIndex: number) => void;
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(1)} MB`;
 }
 
 export class LobbyScene {
@@ -25,6 +33,11 @@ export class LobbyScene {
   private callbacks: LobbyCallbacks;
   private currentUser: AuthUser | null = null;
   private isLoading = false;
+  private isAiEnabled = false;
+  private aiStatus: ModelStatus = 'unloaded';
+  private aiProgress: ModelProgress = { progress: 0 };
+  private unsubscribeAiProgress?: () => void;
+  private unsubscribeAiStatus?: () => void;
 
   constructor(callbacks: LobbyCallbacks) {
     this.callbacks = callbacks;
@@ -36,6 +49,30 @@ export class LobbyScene {
   public async mount(parent: HTMLElement): Promise<void> {
     parent.appendChild(this.container);
 
+    try {
+      this.isAiEnabled = localStorage.getItem('tjapza_enable_ai_bot') === 'true';
+    } catch {
+      this.isAiEnabled = false;
+    }
+    this.aiStatus = modelManager.getStatus();
+    this.aiProgress = modelManager.getProgress();
+
+    this.unsubscribeAiProgress = modelManager.onProgress((progress) => {
+      this.aiProgress = progress;
+      this.render();
+    });
+
+    this.unsubscribeAiStatus = modelManager.onStatusChange((status) => {
+      this.aiStatus = status;
+      this.render();
+    });
+
+    if (this.isAiEnabled && this.aiStatus !== 'ready') {
+      modelManager.init().catch((err) => {
+        console.warn('AI initialization failed:', err);
+      });
+    }
+
     // Fetch or create guest session
     this.currentUser = getCurrentUser();
     if (!this.currentUser) {
@@ -46,6 +83,14 @@ export class LobbyScene {
   }
 
   public unmount(): void {
+    if (this.unsubscribeAiProgress) {
+      this.unsubscribeAiProgress();
+      this.unsubscribeAiProgress = undefined;
+    }
+    if (this.unsubscribeAiStatus) {
+      this.unsubscribeAiStatus();
+      this.unsubscribeAiStatus = undefined;
+    }
     this.container.remove();
   }
 
@@ -53,6 +98,21 @@ export class LobbyScene {
     const isMuted = sound.isMuted();
     const displayName = this.currentUser?.display_name || 'Player';
     const isGuest = this.currentUser?.isGuest ?? true;
+    const isAiDownloading = this.isAiEnabled && this.aiStatus === 'downloading';
+    const isAiReady = this.isAiEnabled && this.aiStatus === 'ready';
+    const progressPct = Math.round(this.aiProgress.progress);
+
+    const playButtonDisabled = this.isLoading || isAiDownloading;
+    const playButtonText = isAiDownloading
+      ? `Downloading AI Brain (${progressPct}%)...`
+      : this.isLoading
+        ? 'Finding Match…'
+        : 'Play Now';
+
+    const createButtonDisabled = isAiDownloading;
+    const createButtonText = isAiDownloading
+      ? `Downloading AI Brain (${progressPct}%)...`
+      : 'Create Room';
 
     this.container.innerHTML = `
       <div class="lobby-backdrop"></div>
@@ -100,6 +160,39 @@ export class LobbyScene {
 
         <!-- Main Card Hub -->
         <main class="lobby-main">
+          <!-- Advanced AI Bot Banner -->
+          <div class="lobby-ai-banner">
+            <div class="ai-banner-header">
+              <label class="ai-toggle-label">
+                <input type="checkbox" id="toggle-ai-bot" ${this.isAiEnabled ? 'checked' : ''} />
+                <span class="ai-toggle-title">🧠 Advanced AI Bot</span>
+              </label>
+              ${isAiReady ? `<div class="ai-badge-ready">✓ Advanced AI Ready</div>` : ''}
+            </div>
+            ${
+              isAiDownloading
+                ? `
+              <div class="ai-download-bar-wrap">
+                <div class="ai-download-meta">
+                  <span class="ai-stage-label">${escapeHtml(this.aiProgress.stage || 'Downloading AI Brain…')}</span>
+                  <span class="ai-progress-numbers">
+                    ${progressPct}%
+                    ${
+                      this.aiProgress.bytesLoaded && this.aiProgress.totalBytes
+                        ? `(${formatBytes(this.aiProgress.bytesLoaded)} / ${formatBytes(this.aiProgress.totalBytes)})`
+                        : ''
+                    }
+                  </span>
+                </div>
+                <div class="ai-progress-track">
+                  <div class="ai-progress-fill" style="width: ${Math.max(0, Math.min(100, this.aiProgress.progress))}%;"></div>
+                </div>
+              </div>
+            `
+                : ''
+            }
+          </div>
+
           <div class="lobby-cards-grid">
             <!-- 1. Quick Play -->
             <div class="lobby-card card-quickplay">
@@ -110,8 +203,8 @@ export class LobbyScene {
                 </div>
                 <h2 class="card-title">Quick Match</h2>
                 <p class="card-desc">Jump straight into a 4-player game. Bots will auto-fill any empty seats after 12s.</p>
-                <button id="btn-quick-play" class="btn-primary btn-gold btn-lg ${this.isLoading ? 'loading' : ''}">
-                  ${this.isLoading ? 'Finding Match…' : 'Play Now'}
+                <button id="btn-quick-play" class="btn-primary btn-gold btn-lg ${this.isLoading || isAiDownloading ? 'loading' : ''}" ${playButtonDisabled ? 'disabled' : ''}>
+                  ${playButtonText}
                 </button>
               </div>
             </div>
@@ -124,8 +217,8 @@ export class LobbyScene {
                 </div>
                 <h2 class="card-title">Create Room</h2>
                 <p class="card-desc">Generate a private 6-character room code to invite friends, or start with bots.</p>
-                <button id="btn-create-room" class="btn-secondary btn-lg">
-                  Create Room
+                <button id="btn-create-room" class="btn-secondary btn-lg" ${createButtonDisabled ? 'disabled' : ''}>
+                  ${createButtonText}
                 </button>
               </div>
             </div>
@@ -205,10 +298,30 @@ export class LobbyScene {
       }
     });
 
+    // AI Bot Toggle
+    const toggleAi = this.container.querySelector('#toggle-ai-bot') as HTMLInputElement | null;
+    toggleAi?.addEventListener('change', (e) => {
+      const checked = (e.target as HTMLInputElement).checked;
+      this.isAiEnabled = checked;
+      try {
+        localStorage.setItem('tjapza_enable_ai_bot', checked ? 'true' : 'false');
+      } catch (err) {
+        console.warn('Failed to save AI bot preference to localStorage:', err);
+      }
+      if (checked) {
+        modelManager.init().catch((err) => {
+          console.warn('AI initialization failed:', err);
+        });
+      }
+      this.render();
+    });
+
+    const isAiDownloading = this.isAiEnabled && this.aiStatus === 'downloading';
+
     // Quick Play
     const btnQuickPlay = this.container.querySelector('#btn-quick-play');
     btnQuickPlay?.addEventListener('click', async () => {
-      if (this.isLoading) return;
+      if (this.isLoading || isAiDownloading) return;
       sound.playClick();
       this.isLoading = true;
       this.render();
@@ -228,6 +341,7 @@ export class LobbyScene {
     // Create Room
     const btnCreateRoom = this.container.querySelector('#btn-create-room');
     btnCreateRoom?.addEventListener('click', async () => {
+      if (isAiDownloading) return;
       sound.playClick();
       try {
         toast.info('Creating private room…');

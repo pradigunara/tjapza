@@ -26,6 +26,7 @@ import { toast } from '../ui/toast';
 import { formatSeatLabel } from '../ui/seatLabel';
 import { MoveHistoryModal } from '../ui/MoveHistoryModal';
 import { TableHud, hostSeatIndexFromSeats, type TableHudState } from '../ui/TableHud';
+import { modelManager } from '../ai/ModelManager';
 
 export interface TableSceneCallbacks {
   onGameFinished: (game: GameRecord, localSeatIndex: number) => void;
@@ -60,6 +61,7 @@ export class TableScene {
   private isProcessingMove = false;
   private heartbeat: GameHeartbeat | null = null;
   private unsubscribeMoves?: () => void;
+  private unsubscribeAi?: () => void;
   private lastTurnIndex = -1;
   private updateSeq = 0;
   private reconcileTimer?: number;
@@ -206,9 +208,15 @@ export class TableScene {
     this.heartbeat = new GameHeartbeat(
       this.game.id,
       () => this.game,
-      () => this.localSeatIndex
+      () => this.localSeatIndex,
+      () => this.controller.domainGame
     );
     this.heartbeat.start();
+
+    // Subscribe to AI status changes to update Table HUD badge
+    this.unsubscribeAi = modelManager.onStatusChange(() => {
+      this.hud.render(this.hudState());
+    });
 
     // Authoritative reconcile poll: heals any missed SSE game update (dead
     // stream, dropped reconnect) so the client can never stall on a stale turn.
@@ -247,6 +255,10 @@ export class TableScene {
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
       this.visibilityHandler = undefined;
+    }
+    if (this.unsubscribeAi) {
+      this.unsubscribeAi();
+      this.unsubscribeAi = undefined;
     }
     if (this.heartbeat) {
       this.heartbeat.stop();
@@ -330,6 +342,7 @@ export class TableScene {
       canPass: isMyTurn && this.controller.canPassTurn().valid,
       isProcessingMove: this.isProcessingMove,
       soundMuted: sound.isMuted(),
+      isAiReady: modelManager.isReady(),
     };
   }
 

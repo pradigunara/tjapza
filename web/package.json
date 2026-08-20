@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build:domain": "bun -e \"require('esbuild').buildSync({ entryPoints: ['src/domain/index.ts'], outfile: '../pb/pb_hooks/domain.js', bundle: true, format: 'cjs', target: 'es2015' });\"",
-  "build": "bun run build:domain && tsc && vite build",
-  "pretest": "bun run build:domain",
-  "test": "bun test",
+    "build": "bun run build:domain && tsc && vite build",
+    "pretest": "bun run build:domain",
+    "test": "bun test",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@wllama/wllama": "^3.6.0",
     "pixi.js": "^8.7.3",
     "pocketbase": "^0.25.1"
   },

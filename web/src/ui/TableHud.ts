@@ -39,6 +39,7 @@ export interface TableHudState {
   canPass: boolean;
   isProcessingMove: boolean;
   soundMuted: boolean;
+  isAiReady?: boolean;
 }
 
 export interface TableHudCallbacks {
@@ -80,7 +81,7 @@ export function lobbyCountdownSecs(created: string, nowMs: number = Date.now()):
 }
 
 export function tableHudHtml(state: TableHudState): string {
-  const { game, localSeatIndex, isMyTurn, soundMuted } = state;
+  const { game, localSeatIndex, isMyTurn, soundMuted, isAiReady } = state;
   const isWaiting = game.status === 'waiting';
   const seats = game.seats || [];
 
@@ -93,6 +94,7 @@ export function tableHudHtml(state: TableHudState): string {
             <span class="badge-code">${game.room_code || '---'}</span>
             <span class="badge-copy-icon">${ICONS.copy}</span>
           </div>
+          ${isAiReady ? `<div class="table-ai-badge" title="On-Device AI Host Active">🧠 AI Host</div>` : ''}
         </div>
 
         <div class="top-bar-right">
