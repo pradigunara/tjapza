@@ -43,12 +43,7 @@ export class LobbyScene {
     } catch {
       this.isAiEnabled = false;
     }
-
-    if (this.isAiEnabled) {
-      modelManager.init().catch((err) => {
-        console.warn('AI initialization failed:', err);
-      });
-    }
+    modelManager.setEnabled(this.isAiEnabled);
 
     // Fetch or create guest session
     this.currentUser = getCurrentUser();
@@ -237,16 +232,7 @@ export class LobbyScene {
     toggleAi?.addEventListener('change', (e) => {
       const checked = (e.target as HTMLInputElement).checked;
       this.isAiEnabled = checked;
-      try {
-        localStorage.setItem('tjapza_enable_ai_bot', checked ? 'true' : 'false');
-      } catch (err) {
-        console.warn('Failed to save AI bot preference to localStorage:', err);
-      }
-      if (checked) {
-        modelManager.init().catch((err) => {
-          console.warn('AI initialization failed:', err);
-        });
-      }
+      modelManager.setEnabled(checked);
       this.render();
     });
 

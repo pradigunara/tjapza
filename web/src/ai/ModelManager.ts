@@ -43,7 +43,31 @@ export class ModelManager {
   }
 
   public isReady(): boolean {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        if (localStorage.getItem('tjapza_enable_ai_bot') !== 'true') {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
     return this.status === 'ready';
+  }
+
+  public setEnabled(enabled: boolean): void {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('tjapza_enable_ai_bot', enabled ? 'true' : 'false');
+      } catch (err) {
+        console.warn('Failed to persist AI preference:', err);
+      }
+    }
+    if (enabled) {
+      this.init();
+    } else {
+      this.terminate();
+    }
   }
 
   public onProgress(listener: ProgressListener): () => void {

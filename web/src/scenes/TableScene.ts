@@ -156,6 +156,15 @@ export class TableScene {
     this.app.stage.addChild(this.rootContainer);
     parentEl.appendChild(this.hud.element);
 
+    const isAiEnabled = (() => {
+      try {
+        return localStorage.getItem('tjapza_enable_ai_bot') === 'true';
+      } catch {
+        return false;
+      }
+    })();
+    modelManager.setEnabled(isAiEnabled);
+
     this.syncLocalSeat(this.game);
 
     // Fetch past moves in this match
