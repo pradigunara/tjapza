@@ -1,6 +1,28 @@
 import { describe, expect, test } from 'bun:test';
 import { Card, CardCombo, Hand, Trick, CARD_3D } from '../domain';
-import { MonteCarloBotEngine } from './MonteCarloBotEngine';
+import { MonteCarloBotEngine, unseenCardCodes } from './MonteCarloBotEngine';
+
+describe('unseenCardCodes', () => {
+  test('excludes own hand and played cards from the pool', () => {
+    const hand = [0, 4, 8]; // 3♦ 4♦ 5♦
+    const played = [51, 50, 0]; // 2♠ 2♥ + duplicate of a hand card
+    const pool = unseenCardCodes(hand, played);
+
+    expect(pool).toHaveLength(52 - 3 - 2);
+    expect(pool).not.toContain(0);
+    expect(pool).not.toContain(4);
+    expect(pool).not.toContain(8);
+    expect(pool).not.toContain(51);
+    expect(pool).not.toContain(50);
+    expect(pool).toContain(1);
+  });
+
+  test('treats missing play history as fully unseen', () => {
+    const pool = unseenCardCodes([CARD_3D]);
+    expect(pool).toHaveLength(51);
+    expect(pool).not.toContain(CARD_3D);
+  });
+});
 
 describe('MonteCarloBotEngine', () => {
   test('returns opening move containing 3♦ on opening', () => {

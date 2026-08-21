@@ -156,14 +156,7 @@ export class TableScene {
     this.app.stage.addChild(this.rootContainer);
     parentEl.appendChild(this.hud.element);
 
-    const isAiEnabled = (() => {
-      try {
-        return localStorage.getItem('tjapza_enable_ai_bot') === 'true';
-      } catch {
-        return false;
-      }
-    })();
-    modelManager.setEnabled(isAiEnabled);
+    modelManager.setEnabled(modelManager.isEnabled());
 
     this.syncLocalSeat(this.game);
 
@@ -218,7 +211,8 @@ export class TableScene {
       this.game.id,
       () => this.game,
       () => this.localSeatIndex,
-      () => this.controller.domainGame
+      () => this.controller.domainGame,
+      () => this.moves.flatMap((m) => (m.action === 'play' ? m.cards || [] : []))
     );
     this.heartbeat.start();
 

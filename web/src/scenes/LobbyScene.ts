@@ -38,13 +38,8 @@ export class LobbyScene {
   public async mount(parent: HTMLElement): Promise<void> {
     parent.appendChild(this.container);
 
-    try {
-      this.isAiEnabled = localStorage.getItem('tjapza_enable_ai_bot') === 'true';
-    } catch {
-      this.isAiEnabled = false;
-    }
+    this.isAiEnabled = modelManager.isEnabled();
     modelManager.setEnabled(this.isAiEnabled);
-
     // Fetch or create guest session
     this.currentUser = getCurrentUser();
     if (!this.currentUser) {

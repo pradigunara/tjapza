@@ -7,6 +7,16 @@ import { modelManager } from '../ai/ModelManager';
 /** Bot tick pacing when no active humans remain (Fast Forward mode). */
 export const FAST_FORWARD_TICK_DELAY_MS = 100;
 
+/** Search effort per strength tier: rollouts per candidate move. */
+export const BOT_STRENGTH_ROLLOUTS = { low: 10, medium: 20, high: 30 } as const;
+export type BotStrength = keyof typeof BOT_STRENGTH_ROLLOUTS;
+
+const ALL_STRENGTHS: BotStrength[] = ['low', 'medium', 'high'];
+
+function randomStrength(): BotStrength {
+  return ALL_STRENGTHS[(Math.random() * ALL_STRENGTHS.length) | 0];
+}
+
 /**
  * Application Service: Orchestrates client bot heartbeats, queue debounce, and timeouts.
  */
@@ -20,17 +30,26 @@ export class GameHeartbeat {
   private getGameState: () => GameRecord | null;
   private getLocalSeat: () => number;
   private getDomainGame?: () => any;
+  private getPlayedCardCodes?: () => number[];
+  /** Per-seat strength tier, rolled once per game so each bot plays consistently. */
+  private botStrengths: BotStrength[];
 
   constructor(
     gameId: string,
     getGameState: () => GameRecord | null,
     getLocalSeat: () => number,
-    getDomainGame?: () => any
+    getDomainGame?: () => any,
+    getPlayedCardCodes?: () => number[]
   ) {
     this.gameId = gameId;
     this.getGameState = getGameState;
     this.getLocalSeat = getLocalSeat;
     this.getDomainGame = getDomainGame;
+    this.getPlayedCardCodes = getPlayedCardCodes;
+    this.botStrengths = Array.from({ length: 4 }, randomStrength);
+    console.log(
+      `[AI Host 🧠] Bot strengths this game: ${this.botStrengths.map((s, i) => `S${i}=${s}`).join(', ')}`
+    );
   }
 
   public start(): void {
@@ -140,27 +159,22 @@ export class GameHeartbeat {
             const botHandCards = await fetchPlayerHand(this.gameId, currentTurn);
             if (botHandCards && botHandCards.length > 0) {
               const domainGame = this.getDomainGame ? this.getDomainGame() : null;
-              const trick = domainGame?.trick;
-              const isOpening = domainGame?.isOpeningMove ?? false;
-              const isFresh = trick?.isFresh ?? true;
-              const lastCombo = isFresh ? undefined : trick?.lastCombo;
 
               console.log(`[AI Host 🧠] Turn triggered for Bot Seat ${currentTurn} (${currentSeat.name}). Cards: ${botHandCards.length}`);
 
-              const decision = await modelManager.generateDecision(
-                {
-                  handCards: botHandCards,
-                  trickCombo: lastCombo,
-                  opponentCounts: game.counts || [13, 13, 13, 13],
-                  isOpeningMove: isOpening,
-                  isFreshTrick: isFresh,
-                  seatIndex: currentTurn,
-                },
-                { timeoutMs: 5000 }
-              );
+              const decision = await modelManager.generateDecision({
+                handCards: botHandCards,
+                trick: domainGame?.trick,
+                opponentCounts: game.counts || [13, 13, 13, 13],
+                isOpeningMove: domainGame?.isOpeningMove ?? false,
+                seatIndex: currentTurn,
+                playedCardCodes: this.getPlayedCardCodes ? this.getPlayedCardCodes() : [],
+              }, {
+                rolloutsPerMove: BOT_STRENGTH_ROLLOUTS[this.botStrengths[currentTurn] ?? 'medium'],
+              });
 
               const playedCards = decision.action === 'play' ? decision.cards : [];
-              console.log(`[AI Host 🧠] Dispatching move to server: ${decision.action} [${playedCards.join(', ')}] (source: ${decision.source})`);
+              console.log(`[AI Host 🧠] Dispatching move to server: ${decision.action} [${playedCards.join(', ')}] (source: ${decision.source}, strength: ${this.botStrengths[currentTurn] ?? 'medium'})`);
               await playMove(this.gameId, currentTurn, decision.action, playedCards);
               tickSuccess = true;
             }

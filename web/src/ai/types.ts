@@ -1,43 +1,22 @@
-import type { CardCombo } from '../domain/CardCombo';
+import type { CardCombo, Trick } from '../domain';
 
-export type ModelStatus = 'unloaded' | 'downloading' | 'ready' | 'error';
+export type ModelStatus = 'unloaded' | 'ready';
 
-export interface ModelProgress {
-  progress: number;
-  bytesLoaded?: number;
-  totalBytes?: number;
-  stage?: string;
-}
-
-export interface LLMBotDecision {
+export interface BotDecisionResult {
   action: 'play' | 'pass';
   cards: number[];
   combo?: CardCombo;
-  source: 'llm' | 'fallback';
-  rawOutput?: string;
+  source: 'mcts' | 'fallback';
   latencyMs?: number;
 }
 
-export interface GameContextForLLM {
+export interface AdvancedBotContext {
   handCards: number[];
-  trickCombo?: CardCombo;
+  /** Current trick state (immutable domain entity); fresh/absent when leading. */
+  trick?: Trick;
   opponentCounts: number[];
   isOpeningMove: boolean;
-  isFreshTrick: boolean;
   seatIndex?: number;
+  /** All card codes already played in this game (visible information). */
+  playedCardCodes?: number[];
 }
-
-export interface RawLLMDecision {
-  action: 'play' | 'pass';
-  cards: string[];
-}
-
-export type WorkerIncomingMessage =
-  | { type: 'init'; modelId?: string; device?: 'webgpu' | 'wasm' | 'cpu'; dtype?: string }
-  | { type: 'generate'; prompt: string; context?: any; maxNewTokens?: number; id?: string };
-
-export type WorkerOutgoingMessage =
-  | { type: 'progress'; progress: number; bytesLoaded?: number; totalBytes?: number; total?: number; stage?: string }
-  | { type: 'ready' }
-  | { type: 'result'; output: string; latencyMs: number; id?: string }
-  | { type: 'error'; error: string; id?: string };

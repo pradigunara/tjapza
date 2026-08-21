@@ -1,64 +1,48 @@
-import { Hand } from '../domain/Hand';
-import { Trick } from '../domain/Trick';
-import { LLMBotValidator } from './LLMBotValidator';
+import { Hand, Trick, BotEngine } from '../domain';
 import { MonteCarloBotEngine } from './MonteCarloBotEngine';
-import type {
-  ModelStatus,
-  ModelProgress,
-  LLMBotDecision,
-  GameContextForLLM,
-} from './types';
+import type { ModelStatus, BotDecisionResult, AdvancedBotContext } from './types';
 
-export interface ModelManagerInitOptions {
-  modelId?: string;
-  device?: 'webgpu' | 'wasm' | 'cpu';
-  dtype?: string;
-  workerFactory?: () => Worker;
-}
+const AI_ENABLED_KEY = 'tjapza_enable_ai_bot';
 
 export interface GenerateOptions {
-  timeoutMs?: number;
   rolloutsPerMove?: number;
 }
 
-type ProgressListener = (progress: ModelProgress) => void;
 type StatusListener = (status: ModelStatus) => void;
 
+function readEnabledFlag(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(AI_ENABLED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Service managing Advanced Bot AI (Determinized Monte Carlo Search Engine).
- * Instantly ready with 0 MB download and sub-50ms execution latency.
+ * Service managing the Advanced Bot (Determinized Monte Carlo Search).
+ * Instantly ready with 0 MB download and sub-100ms decision latency.
  */
 export class ModelManager {
   private status: ModelStatus = 'unloaded';
-  private progress: ModelProgress = { progress: 0 };
-  private progressListeners = new Set<ProgressListener>();
   private statusListeners = new Set<StatusListener>();
 
   public getStatus(): ModelStatus {
     return this.status;
   }
 
-  public getProgress(): ModelProgress {
-    return { ...this.progress };
+  public isEnabled(): boolean {
+    return readEnabledFlag();
   }
 
   public isReady(): boolean {
-    if (typeof localStorage !== 'undefined') {
-      try {
-        if (localStorage.getItem('tjapza_enable_ai_bot') !== 'true') {
-          return false;
-        }
-      } catch {
-        return false;
-      }
-    }
-    return this.status === 'ready';
+    return this.status === 'ready' && this.isEnabled();
   }
 
   public setEnabled(enabled: boolean): void {
     if (typeof localStorage !== 'undefined') {
       try {
-        localStorage.setItem('tjapza_enable_ai_bot', enabled ? 'true' : 'false');
+        localStorage.setItem(AI_ENABLED_KEY, enabled ? 'true' : 'false');
       } catch (err) {
         console.warn('Failed to persist AI preference:', err);
       }
@@ -68,11 +52,6 @@ export class ModelManager {
     } else {
       this.terminate();
     }
-  }
-
-  public onProgress(listener: ProgressListener): () => void {
-    this.progressListeners.add(listener);
-    return () => this.progressListeners.delete(listener);
   }
 
   public onStatusChange(listener: StatusListener): () => void {
@@ -93,94 +72,69 @@ export class ModelManager {
     }
   }
 
-  private updateProgress(progress: ModelProgress): void {
-    this.progress = progress;
-    for (const listener of this.progressListeners) {
-      try {
-        listener(progress);
-      } catch (err) {
-        console.error('Error in progress listener:', err);
-      }
-    }
-  }
-
-  /**
-   * Initializes the Advanced Bot Engine (instant activation).
-   */
-  public async init(_options: ModelManagerInitOptions = {}): Promise<void> {
-    this.updateProgress({ progress: 100, stage: 'ready' });
+  /** Initializes the Advanced Bot Engine (instant activation). */
+  public init(): void {
     this.setStatus('ready');
-    return Promise.resolve();
   }
 
-  /**
-   * Generates a move decision using Determinized Monte Carlo Search (PIMC).
-   */
+  /** Generates a move decision using Determinized Monte Carlo Search (PIMC). */
   public async generateDecision(
-    context: GameContextForLLM,
+    context: AdvancedBotContext,
     options: GenerateOptions = {}
-  ): Promise<LLMBotDecision> {
-    const { rolloutsPerMove = 30 } = options;
+  ): Promise<BotDecisionResult> {
     const t0 = performance.now();
-
     const hand = Hand.fromCodes(context.handCards);
-    const trick =
-      context.isFreshTrick || !context.trickCombo
-        ? Trick.createFresh(0)
-        : new Trick({ lastCombo: context.trickCombo });
-    const isOpeningMove = context.isOpeningMove;
-    const counts = context.opponentCounts;
+    const seatIndex = context.seatIndex ?? 0;
+    const trick = context.trick ?? Trick.createFresh(seatIndex);
 
-    if (this.status !== 'ready') {
-      return LLMBotValidator.validateAndFinalizeMove({
-        rawDecision: null,
+    const fallback = (): BotDecisionResult => {
+      const move = BotEngine.decideMove({
         hand,
         trick,
-        isOpeningMove,
-        counts,
+        isOpeningMove: context.isOpeningMove,
+        counts: context.opponentCounts,
+        seatIndex,
       });
-    }
+      return {
+        action: move.action,
+        cards: move.cards.map((c) => c.code),
+        combo: move.combo,
+        source: 'fallback',
+      };
+    };
+
+    if (this.status !== 'ready') return fallback();
 
     try {
       const decision = MonteCarloBotEngine.decideMove({
         hand,
         trick,
-        isOpeningMove,
-        counts,
-        seatIndex: context.seatIndex ?? 0,
-        options: { rolloutsPerMove },
+        isOpeningMove: context.isOpeningMove,
+        counts: context.opponentCounts,
+        seatIndex,
+        playedCardCodes: context.playedCardCodes,
+        options,
       });
-
       const latencyMs = Math.round(performance.now() - t0);
       console.log(
         `[Advanced Bot 🧠] Decision in ${latencyMs}ms: ${decision.action} [${decision.cards.map((c) => c.name).join(', ')}]`
       );
-
       return {
         action: decision.action,
         cards: decision.cards.map((c) => c.code),
         combo: decision.combo,
-        source: 'llm',
+        source: 'mcts',
         latencyMs,
       };
     } catch (err: any) {
       console.warn('[Advanced Bot 🧠] Search failed, falling back to heuristic:', err?.message);
-      return LLMBotValidator.validateAndFinalizeMove({
-        rawDecision: null,
-        hand,
-        trick,
-        isOpeningMove,
-        counts,
-      });
+      return fallback();
     }
   }
 
-  /**
-   * Terminates and resets the engine status.
-   */
+  /** Resets the engine status. */
   public terminate(): void {
     this.setStatus('unloaded');
-    this.progress = { progress: 0 };
   }
 }
 

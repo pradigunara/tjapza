@@ -14,6 +14,23 @@ export interface MctsOptions {
 }
 
 /**
+ * Cards the deciding seat has not seen: everything outside its hand and
+ * outside the publicly played record. Determinizations deal only from this pool.
+ */
+export function unseenCardCodes(
+  handCodes: number[],
+  playedCardCodes: number[] = []
+): number[] {
+  const seen = new Set<number>(handCodes);
+  for (const code of playedCardCodes) seen.add(code);
+  const unseen: number[] = [];
+  for (let c = 0; c < 52; c++) {
+    if (!seen.has(c)) unseen.push(c);
+  }
+  return unseen;
+}
+
+/**
  * High-performance Determinized Monte Carlo Search (PIMC) Bot Engine for Capsa Banting.
  *
  * Evaluates all legal candidate plays by simulating rollouts across random determinizations
@@ -26,6 +43,7 @@ export class MonteCarloBotEngine {
     isOpeningMove?: boolean;
     counts?: number[];
     seatIndex?: number;
+    playedCardCodes?: number[];
     options?: MctsOptions;
   }): BotDecision {
     const {
@@ -34,6 +52,7 @@ export class MonteCarloBotEngine {
       isOpeningMove = false,
       counts = [13, 13, 13, 13],
       seatIndex = 0,
+      playedCardCodes = [],
       options = {},
     } = params;
 
@@ -73,13 +92,7 @@ export class MonteCarloBotEngine {
     }
 
     // 2. Identify Unseen Cards Pool (Without Cheating - Imperfect Information)
-    const myCardCodes = new Set(hand.cardCodes);
-    const unseenCardCodes: number[] = [];
-    for (let c = 0; c < 52; c++) {
-      if (!myCardCodes.has(c)) {
-        unseenCardCodes.push(c);
-      }
-    }
+    const unseenPool = unseenCardCodes(hand.cardCodes, playedCardCodes);
 
     // 3. Evaluate each candidate via Monte Carlo Rollouts
     let bestScore = -Infinity;
@@ -90,7 +103,7 @@ export class MonteCarloBotEngine {
 
       for (let r = 0; r < rolloutsPerMove; r++) {
         // Fast in-place Fisher-Yates shuffle of unseen cards pool
-        const shuffled = [...unseenCardCodes];
+        const shuffled = [...unseenPool];
         for (let i = shuffled.length - 1; i > 0; i--) {
           const j = (Math.random() * (i + 1)) | 0;
           const tmp = shuffled[i];
